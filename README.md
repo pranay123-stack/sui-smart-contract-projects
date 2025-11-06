@@ -50,18 +50,21 @@ This repository contains **4 production-ready projects** demonstrating expertise
 
 All contracts are **live and verified** on Sui Testnet:
 
-### 1️⃣ Token Vault
+### 1️⃣ Token Vault Package
 - **Package ID:** `0x790083d44489c1e1a8373a470b48b9b64d9e43c451e3d3917e37e5e13ba4f47b`
+- **Contains:** `token_vault::vault` module
 - **Explorer:** [View on Sui Explorer](https://testnet.suivision.xyz/package/0x790083d44489c1e1a8373a470b48b9b64d9e43c451e3d3917e37e5e13ba4f47b)
 - **Status:** 🟢 Live
 
-### 2️⃣ AMM DEX
+### 2️⃣ AMM DEX Package
 - **Package ID:** `0x32e887df4e3a2ca0b104f39336994442c092de453f71fd0eaf065df0ee9e1840`
+- **Contains:** `amm_dex::pool` module
 - **Explorer:** [View on Sui Explorer](https://testnet.suivision.xyz/package/0x32e887df4e3a2ca0b104f39336994442c092de453f71fd0eaf065df0ee9e1840)
 - **Status:** 🟢 Live
 
-### 3️⃣ Lending Protocol ⭐ **FLAGSHIP**
+### 3️⃣ Lending Protocol Package ⭐ **FLAGSHIP**
 - **Package ID:** `0xf7d7820575a71fe7990f3f741ec5bd8be7a8f03aa6d8b23c20aed6f52071972f`
+- **Contains:** `lending_protocol::lending_pool` module
 - **Explorer:** [View on Sui Explorer](https://testnet.suivision.xyz/package/0xf7d7820575a71fe7990f3f741ec5bd8be7a8f03aa6d8b23c20aed6f52071972f)
 - **Status:** 🟢 Live
 

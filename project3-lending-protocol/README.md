@@ -68,6 +68,186 @@ flowchart TD
     style L fill:#FF9800,stroke:#F57C00,color:#fff
 ```
 
+#### System Design Flow Explanation:
+
+This comprehensive diagram shows the complete lending protocol ecosystem with four distinct actors and their interactions.
+
+**Color Coding:**
+- 🔵 **Blue (Lender)**: Users who deposit assets to earn interest
+- 🔴 **Red (Borrower)**: Users who borrow against collateral
+- 🟣 **Purple (Liquidator)**: Third-party actors who liquidate unhealthy positions
+- 🟢 **Green (Lending Pool)**: Central contract managing all deposits, loans, and collateral
+- 🟠 **Orange (Protocol)**: Automated interest accrual system
+
+**Lender Flow (Steps 1-3):**
+
+1. **Lender → Pool**: Deposit assets (e.g., 10,000 SUI)
+   - Assets locked in pool
+   - Available for borrowers to borrow
+2. **Pool → DepositPosition**: Mint deposit receipt NFT
+   - NFT represents deposit + accrued interest
+   - Can withdraw anytime if liquidity available
+3. **Earn Interest**: Passive income from borrowers
+   - Interest automatically compounds
+   - Rate increases with pool utilization
+
+**Borrower Flow (Steps 4-9):**
+
+**Opening Loan (Steps 4-6):**
+4. **Borrower → Pool**: Provide collateral
+   - Example: Deposit 10,000 SUI as collateral
+   - Collateral locked until loan repaid
+5. **Collateral Factor Check**: Pool verifies safety
+   - **Decision Point**: Can borrow max 75% of collateral
+   - ✅ **Valid**: Request 7,000 SUI (70% < 75%) → Approved
+   - ❌ **Invalid**: Request 8,000 SUI (80% > 75%) → Rejected
+6. **Borrow Position Created**: Mint BorrowPosition NFT
+   - Records collateral amount and debt
+   - Transfer borrowed assets to borrower
+
+**Repaying Loan (Steps 7-9):**
+7. **Borrower → Pool**: Repay loan + accrued interest
+   - Must pay back original amount + interest
+   - Example: Borrowed 7,000 → Owe 7,350 after 5% interest
+8. **Pool → BorrowPosition**: Burn position NFT
+   - Loan marked as closed
+   - Debt cleared from system
+9. **Pool → Borrower**: Return collateral
+   - Full collateral returned
+   - Borrower receives original 10,000 SUI back
+
+**Liquidation Flow (Steps 10-12):**
+
+**Why Liquidation Exists:**
+If a borrower's debt grows too large relative to collateral (due to interest), the position becomes risky for lenders. Liquidators are incentivized to close these risky positions.
+
+10. **Liquidator → Pool**: Identify unhealthy position
+    - Monitors all open loans
+    - Finds position with health factor < 1.0
+    - Prepares to repay debt
+
+11. **Health Factor Check**: Pool calculates position safety
+    - Formula: `health_factor = (collateral × 80%) / debt`
+
+    **Example Unhealthy Position:**
+    ```
+    Collateral: 10,000 SUI
+    Debt: 8,500 SUI (grew from 7,000 due to interest)
+    Health Factor = (10,000 × 0.80) / 8,500 = 0.94
+    ```
+
+    - **Decision Point**:
+      - ✅ **HF < 1.0** (0.94): Position unhealthy → Liquidation proceeds
+      - ❌ **HF ≥ 1.0**: Position healthy → Liquidation reverts
+
+12. **Execute Liquidation**: Liquidator receives bonus
+    - **Liquidator pays**: 8,500 SUI (repays debt)
+    - **Liquidator receives**: 8,925 SUI (collateral + 5% bonus)
+    - **Profit**: 425 SUI (5% liquidation bonus)
+    - **Remaining collateral**: 1,075 SUI returned to borrower
+
+**Interest Accrual (Automated):**
+
+- **Protocol → Pool**: Continuous interest calculation
+  - Runs automatically every transaction
+  - Updates all outstanding debts
+  - No manual intervention needed
+
+**How Interest Works:**
+```
+Utilization = total_borrowed / total_deposits
+Interest Rate = f(utilization)  // Kinked curve
+
+Low utilization (0-80%): 2% to 12% APY
+High utilization (80-100%): 12% to 32% APY
+```
+
+**Example:**
+- Pool has 100,000 SUI deposits
+- 60,000 SUI borrowed (60% utilization)
+- Borrow rate: ~9% APY
+- Lenders earn: ~5.4% APY (60% × 9%)
+- Protocol earns: ~3.6% APY spread
+
+**Off-Chain Integration:**
+- **Events**: All operations emit events
+  - Track deposit/withdraw history
+  - Monitor borrow positions
+  - Alert on liquidation opportunities
+  - Calculate interest rates in real-time
+
+**Key Economic Mechanisms:**
+
+**1. Overcollateralization (Safety):**
+- Borrowers must deposit MORE than they borrow
+- Protects lenders from borrower default
+- 75% collateral factor = 133% collateralization
+- Example: To borrow $7,500, need $10,000 collateral
+
+**2. Liquidation Incentive (Protocol Health):**
+- 5% bonus attracts liquidators
+- Liquidators compete to find unhealthy positions
+- Fast liquidation protects protocol solvency
+- Lenders always get paid back
+
+**3. Dynamic Interest Rates (Supply/Demand):**
+- High utilization → High rates → Encourages deposits
+- Low utilization → Low rates → Encourages borrowing
+- Self-balancing mechanism
+
+**4. Health Factor (Risk Monitoring):**
+- Real-time position health calculation
+- Formula: `(collateral × liquidation_threshold) / debt`
+- HF < 1.0 = Liquidatable
+- HF ≥ 1.0 = Safe
+
+**Gap Between Collateral Factor and Liquidation Threshold:**
+
+- **Borrow Limit**: 75% of collateral
+- **Liquidation Trigger**: 80% of collateral
+- **5% Buffer**: Protects against rapid price changes
+
+**Example:**
+```
+Collateral: 10,000 SUI
+Max Borrow: 7,500 SUI (75%)
+Liquidation at: 8,000 SUI debt (80%)
+Buffer: 500 SUI (6.67% wiggle room)
+```
+
+**Real-World Comparison:**
+
+**Traditional Bank Loan:**
+- Credit check required
+- Fixed interest rate
+- Collateral held by bank
+- Bank can seize if default
+
+**DeFi Lending Protocol:**
+- No credit check (permissionless)
+- Dynamic interest rate (utilization-based)
+- Collateral in smart contract (trustless)
+- Automatic liquidation (no legal process)
+
+**Compared to Centralized Crypto Lending:**
+
+| Feature | DeFi Protocol | CeFi (BlockFi, Celsius) |
+|---------|---------------|-------------------------|
+| **Custody** | Smart contract | Company holds assets |
+| **Transparency** | On-chain, auditable | Opaque reserves |
+| **Interest Rates** | Algorithmic | Company discretion |
+| **Liquidation** | Automatic, instant | Manual, delayed |
+| **Counterparty Risk** | Smart contract bugs | Company bankruptcy |
+| **Access** | Permissionless | KYC required |
+
+**Why This Design is Battle-Tested:**
+
+This architecture mirrors industry leaders:
+- **Aave**: $5B+ TVL, same collateral factor concept
+- **Compound**: Original cToken design, interest accrual
+- **MakerDAO**: Liquidation bonus mechanism
+- **Suilend**: Native Sui implementation (your direct comp!)
+
 ### Core Components
 
 1. **LendingPool<T>**: Main pool contract for each asset type

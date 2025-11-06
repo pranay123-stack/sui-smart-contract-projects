@@ -255,6 +255,113 @@ flowchart TD
     style G fill:#FF9800,stroke:#F57C00,color:#fff
 ```
 
+#### System Design Flow Explanation:
+
+This diagram illustrates the complete AMM ecosystem with three primary actors and their interactions.
+
+**Color Coding:**
+- 🔵 **Blue (Liquidity Provider)**: Users who deposit tokens to earn fees
+- 🔴 **Red (Trader)**: Users who swap tokens (pay 0.3% fee)
+- 🟢 **Green (AMM Pool)**: Central contract holding all liquidity
+- 🟠 **Orange (Admin)**: Protocol governance for emergency controls
+
+**Liquidity Provider Flow (Steps 1-3 & 7-9):**
+
+**Adding Liquidity (Steps 1-3):**
+1. **LP → Pool**: Deposit both Token A and Token B
+   - Must provide both sides of the pair
+   - Ratio must match current pool price
+   - Example: If pool is 1:4 ratio, deposit 100 SUI + 400 USDC
+2. **Pool → LP Token Supply**: Mint LP tokens
+   - Tokens represent ownership percentage
+   - Example: Add 10% of liquidity → Get 10% of LP tokens
+3. **LP Tokens → LP**: Receive tradeable LP tokens
+   - Can hold, sell, or use as collateral elsewhere
+   - Represents claim on pool reserves + accrued fees
+
+**Removing Liquidity (Steps 7-9):**
+7. **LP → Pool**: Burn LP tokens to withdraw
+8. **Share Calculation**: Pool calculates proportional amounts
+   - If you own 10% LP tokens → Get 10% of each reserve
+9. **Pool → LP**: Receive both tokens back
+   - Includes original deposit + proportional share of fees
+   - May have more/less value due to price changes (impermanent loss/gain)
+
+**Trading Flow (Steps 4-6):**
+
+4. **Trader → Pool**: Swap Token A for Token B
+   - Trader specifies input amount and minimum output
+   - Example: Swap 100 SUI, expect at least 380 USDC
+5. **x × y = k Formula**: Pool calculates output amount
+   - Applies 0.3% fee first: `99.7 SUI after fee`
+   - Formula: `amount_out = (amount_in_with_fee × reserve_b) / (reserve_a + amount_in_with_fee)`
+   - Price moves based on trade size (larger trades = more slippage)
+6. **Pool → Trader**: Transfer Token B to trader
+   - Slippage protection: Reverts if output < minimum
+   - 0.3% fee stays in pool → Benefits all LPs
+
+**Mathematical Magic - The k Constant:**
+
+**Before trade**: `reserve_a × reserve_b = k`
+- Example: `1,000 SUI × 4,000 USDC = 4,000,000`
+
+**After 100 SUI trade**:
+- Reserves: `1,100 SUI × 3,637 USDC = 4,000,700`
+- **k increased by 700** (from 0.3% fee!)
+- This extra value distributed to LPs
+
+**Why This Works:**
+- Traders pay 0.3% fee on every swap
+- Fee stays in pool forever (increases k)
+- LPs own proportional share of growing pool
+- More trading volume = More fees = Higher LP returns
+
+**Admin Operations:**
+- **Pause/Unpause**: Emergency halt
+  - Stop trading during security incidents
+  - Protect liquidity providers
+  - Only affects new trades (existing LP positions safe)
+
+**Off-Chain Integration:**
+- **Events**: Every swap, add liquidity, remove liquidity emits event
+  - Build trading history
+  - Calculate APY for LPs
+  - Monitor pool health
+  - Detect arbitrage opportunities
+
+**Key Economic Principles:**
+
+1. **Automated Pricing**: No human sets prices, math does it
+   - Price = reserve_b / reserve_a
+   - Trades automatically adjust reserves and price
+
+2. **Continuous Liquidity**: Pool never "runs out"
+   - Large trades just move price significantly
+   - Infinite liquidity at infinite price
+
+3. **Incentive Alignment**:
+   - Traders want best price → Keep trades small
+   - LPs want fees → Provide liquidity
+   - Arbitrageurs want profit → Keep prices aligned with market
+
+4. **Self-Balancing**:
+   - If pool price diverges from market → Arbitrage opportunity
+   - Arbitrageurs trade to profit → Brings price back to market
+   - Pool automatically stays aligned without intervention
+
+**Real-World Comparison:**
+
+Traditional Exchange:
+- Buyers: "I'll buy SUI at $4.00"
+- Sellers: "I'll sell SUI at $4.05"
+- Exchange matches orders
+
+AMM:
+- Pool: "Current price is $4.00 (ratio-based)"
+- Trader: "I'll buy 100 SUI"
+- Pool: "That'll move price to $4.10, you get 95 SUI for $400"
+- Automatic execution, no counterparty needed
+
 ### Core Components
 
 1. **Pool<TokenA, TokenB>**: Generic liquidity pool object

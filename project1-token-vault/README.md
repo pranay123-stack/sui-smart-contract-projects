@@ -172,6 +172,56 @@ flowchart TD
     style D fill:#9C27B0,stroke:#7B1FA2,color:#fff
 ```
 
+#### System Design Flow Explanation:
+
+This high-level diagram shows the complete lifecycle of the Token Vault from a user's perspective.
+
+**Color Coding:**
+- 🔵 **Blue (User)**: End users who deposit/withdraw tokens
+- 🟢 **Green (Vault Contract)**: Central smart contract managing all funds
+- 🟣 **Purple (VaultReceipt)**: NFT proof of deposit ownership
+- 🟠 **Orange (Admin)**: Protocol administrators with special permissions
+
+**Main User Flows:**
+
+**Deposit Flow (Steps 1-3):**
+1. **User → Vault**: User sends tokens to vault contract
+2. **Share Calculation**: Vault calculates fair share allocation
+   - Formula ensures proportional ownership
+   - Early and late depositors get equivalent treatment
+3. **Receipt Issuance**: User receives VaultReceipt NFT
+   - NFT represents ownership shares
+   - Can be transferred, used as collateral, or burned for withdrawal
+
+**Withdrawal Flow (Steps 4-6):**
+4. **User → Vault**: User submits VaultReceipt to withdraw
+5. **Amount Calculation**: Vault determines withdrawal amount
+   - Based on user's share of total pool
+   - Includes all accrued yields automatically
+6. **Token Transfer**: User receives original deposit + yield
+   - Receipt is burned (single-use)
+   - Vault balance and shares updated
+
+**Admin Operations:**
+- **Accrue Yield**: Admin adds earned profits to vault
+  - Increases vault balance without changing total shares
+  - Automatically increases value per share for all users
+- **Pause/Unpause**: Emergency controls
+  - Halt all deposits/withdrawals during security incidents
+  - Only admin can pause/unpause
+
+**Off-Chain Integration:**
+- **Event Emission**: Every operation emits events
+  - Enables building dashboards and analytics
+  - Creates audit trail for compliance
+  - Allows notifications and monitoring
+
+**Key Design Principles:**
+1. **Fair Distribution**: Share-based system ensures proportional yields
+2. **Security**: Emergency pause protects users during incidents
+3. **Transparency**: All operations emit events for tracking
+4. **Simplicity**: Users only need deposit/withdraw - vault handles complexity
+
 ### Core Components
 
 1. **Vault Object**: Main shared object holding all deposited tokens

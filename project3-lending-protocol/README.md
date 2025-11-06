@@ -34,6 +34,40 @@ This protocol enables users to:
 
 ## Architecture
 
+### System Design Flow
+
+```mermaid
+flowchart TD
+    A[Lender] -->|1. Deposit Assets| B[Lending Pool]
+    B -->|2. Mint DepositPosition| C[Position NFT]
+    C -->|3. Earn Interest| A
+
+    D[Borrower] -->|4. Provide Collateral| B
+    B -->|5. Check Collateral Factor| E{CF Check: 75%}
+    E -->|Valid| F[Mint BorrowPosition]
+    E -->|Invalid| G[Reject]
+    F -->|6. Transfer Borrowed Assets| D
+
+    D -->|7. Repay Loan + Interest| B
+    B -->|8. Burn BorrowPosition| F
+    B -->|9. Return Collateral| D
+
+    H[Liquidator] -->|10. Liquidate Unhealthy| B
+    B -->|11. Check Health Factor| I{HF < 1.0?}
+    I -->|Yes| J[Execute Liquidation]
+    I -->|No| K[Reject]
+    J -->|12. 5% Bonus + Collateral| H
+
+    L[Protocol] -->|Accrue Interest| B
+    B -->|Emit Events| M[Off-chain Indexer]
+
+    style B fill:#4CAF50,stroke:#2E7D32,color:#fff
+    style A fill:#2196F3,stroke:#1976D2,color:#fff
+    style D fill:#FF6B6B,stroke:#C92A2A,color:#fff
+    style H fill:#9C27B0,stroke:#7B1FA2,color:#fff
+    style L fill:#FF9800,stroke:#F57C00,color:#fff
+```
+
 ### Core Components
 
 1. **LendingPool<T>**: Main pool contract for each asset type
@@ -41,10 +75,84 @@ This protocol enables users to:
 3. **BorrowPosition<T>**: User's collateralized borrow position
 4. **AdminCap**: Administrative capability for pool management
 
+### Borrow Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant Borrower
+    participant Pool as Lending Pool
+    participant Clock
+    participant Position as BorrowPosition
+
+    Borrower->>Pool: borrow(collateral, amount)
+    Pool->>Pool: Check if paused
+    Pool->>Clock: Get current time
+    Pool->>Pool: Accrue interest
+
+    Pool->>Pool: Check collateral factor
+    Note over Pool: require(amount <= collateral * 75%)
+
+    Pool->>Pool: Check available liquidity
+    Note over Pool: require(amount <= available_liquidity)
+
+    Pool->>Position: Create BorrowPosition
+    Note over Position: Store collateral & debt shares
+
+    Pool->>Pool: Update pool state
+    Note over Pool: total_borrowed += amount<br/>total_shares += debt_shares
+
+    Pool->>Borrower: Transfer borrowed tokens
+    Pool->>Pool: Emit BorrowEvent
+```
+
+### Liquidation Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant Liquidator
+    participant Pool as Lending Pool
+    participant Position as BorrowPosition
+    participant Clock
+
+    Liquidator->>Pool: liquidate(position, repayment)
+    Pool->>Pool: Check if paused
+    Pool->>Clock: Get current time
+    Pool->>Pool: Accrue interest
+
+    Pool->>Pool: Calculate health factor
+    Note over Pool: health = (collateral * 80%) / debt
+
+    alt Health Factor < 1.0
+        Pool->>Pool: Calculate liquidation amounts
+        Note over Pool: repay_value = repayment<br/>collateral_received = repay * 1.05
+
+        Pool->>Position: Burn or update position
+        Pool->>Pool: Update pool state
+        Pool->>Liquidator: Transfer collateral + 5% bonus
+        Pool->>Pool: Emit LiquidationEvent
+    else Health Factor >= 1.0
+        Pool-->>Liquidator: Revert: Position healthy
+    end
+```
+
 ### Interest Rate Model
 
 The protocol uses a kinked interest rate model:
 
+```mermaid
+graph LR
+    A[Utilization 0%] -->|Base: 2%| B[Utilization 80%]
+    B -->|Slope: +10%| C[Rate: 12%]
+    C -->|Steep: +20%| D[Utilization 100%]
+    D -->|Rate: 32%| D
+
+    style A fill:#4CAF50,color:#fff
+    style B fill:#FF9800,color:#fff
+    style C fill:#FF6B6B,color:#fff
+    style D fill:#C92A2A,color:#fff
+```
+
+**Formula:**
 ```
 if utilization <= 80%:
     borrow_rate = 2% + (utilization * 10%) / 80%
@@ -55,8 +163,69 @@ else:
 
 This incentivizes liquidity provision at high utilization rates.
 
-### Health Factor
+### Deposit & Withdrawal Flow
 
+```mermaid
+sequenceDiagram
+    participant Lender
+    participant Pool as Lending Pool
+    participant Position as DepositPosition
+    participant Clock
+
+    Note over Lender,Clock: DEPOSIT FLOW
+
+    Lender->>Pool: deposit(tokens)
+    Pool->>Pool: Check if paused
+    Pool->>Clock: Get current time
+    Pool->>Pool: Accrue interest
+
+    Pool->>Pool: Calculate shares
+    Note over Pool: shares = amount * total_shares / total_deposits
+
+    Pool->>Position: Mint DepositPosition
+    Pool->>Pool: Update pool state
+    Pool->>Pool: Emit DepositEvent
+
+    Note over Lender,Clock: WITHDRAWAL FLOW
+
+    Lender->>Pool: withdraw(position)
+    Pool->>Clock: Get current time
+    Pool->>Pool: Accrue interest
+
+    Pool->>Pool: Calculate withdrawal amount
+    Note over Pool: amount = shares * total_deposits / total_shares
+
+    Pool->>Pool: Check liquidity available
+    Pool->>Position: Burn DepositPosition
+    Pool->>Lender: Transfer tokens + accrued interest
+    Pool->>Pool: Emit WithdrawEvent
+```
+
+### Health Factor Calculation
+
+```mermaid
+graph TD
+    A[Start] --> B[Get Position Data]
+    B --> C[collateral_value]
+    B --> D[debt_value]
+
+    C --> E[Calculate Health Factor]
+    D --> E
+
+    E --> F{health_factor = collateral * 0.80 / debt}
+
+    F -->|HF >= 1.0| G[Position Healthy ✅]
+    F -->|HF < 1.0| H[Position Liquidatable ⚠️]
+
+    G --> I[Can borrow more]
+    H --> J[Must repay or face liquidation]
+
+    style G fill:#4CAF50,color:#fff
+    style H fill:#FF6B6B,color:#fff
+    style E fill:#2196F3,color:#fff
+```
+
+**Formula:**
 ```
 health_factor = (collateral * liquidation_threshold) / debt
 

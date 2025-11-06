@@ -13,11 +13,71 @@ A secure, production-ready token vault smart contract built on Sui blockchain wi
 
 ## Architecture
 
+### System Design Flow
+
+```mermaid
+flowchart TD
+    A[User] -->|1. Deposit Tokens| B[Vault Contract]
+    B -->|2. Calculate Shares| C{Share Calculation}
+    C -->|shares = amount * total_shares / balance| D[Mint VaultReceipt]
+    D -->|3. Return Receipt| A
+
+    A -->|4. Withdraw Request + Receipt| B
+    B -->|5. Calculate Amount| E{Amount Calculation}
+    E -->|amount = shares * balance / total_shares| F[Burn Receipt]
+    F -->|6. Transfer Tokens| A
+
+    G[Admin] -->|Accrue Yield| B
+    G -->|Pause/Unpause| B
+    B -->|Emit Events| H[Off-chain Indexer]
+
+    style B fill:#4CAF50,stroke:#2E7D32,color:#fff
+    style A fill:#2196F3,stroke:#1976D2,color:#fff
+    style G fill:#FF9800,stroke:#F57C00,color:#fff
+    style D fill:#9C27B0,stroke:#7B1FA2,color:#fff
+```
+
 ### Core Components
 
 1. **Vault Object**: Main shared object holding all deposited tokens
 2. **VaultReceipt**: User's proof of deposit and ownership shares
 3. **AdminCap**: Capability object for administrative privileges
+
+### Deposit Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Vault
+    participant Receipt
+
+    User->>Vault: deposit(amount)
+    Vault->>Vault: Check if paused
+    Vault->>Vault: Calculate shares
+    Note over Vault: shares = amount * total_shares / balance
+    Vault->>Receipt: Mint VaultReceipt
+    Receipt-->>User: Return receipt with shares
+    Vault->>Vault: Update balance & total_shares
+    Vault->>Vault: Emit DepositEvent
+```
+
+### Withdrawal Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Vault
+    participant Receipt
+
+    User->>Vault: withdraw(receipt)
+    Vault->>Vault: Check if paused
+    Vault->>Vault: Calculate withdraw amount
+    Note over Vault: amount = shares * balance / total_shares
+    Vault->>Receipt: Burn VaultReceipt
+    Vault->>User: Transfer tokens
+    Vault->>Vault: Update balance & total_shares
+    Vault->>Vault: Emit WithdrawEvent
+```
 
 ### Key Design Patterns
 

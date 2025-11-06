@@ -15,6 +15,33 @@ A fully functional Automated Market Maker (AMM) decentralized exchange built on 
 
 ## Architecture
 
+### System Design Flow
+
+```mermaid
+flowchart TD
+    A[Liquidity Provider] -->|1. Add Liquidity| B[AMM Pool]
+    B -->|2. Mint LP Tokens| C[LP Token Supply]
+    C -->|3. Return LP Tokens| A
+
+    D[Trader] -->|4. Swap Token A| B
+    B -->|5. Calculate Output| E{x * y = k Formula}
+    E -->|amount_out = x_in * y / x + x_in| B
+    B -->|6. Return Token B + 0.3% fee| D
+
+    A -->|7. Burn LP Tokens| B
+    B -->|8. Calculate Share| F{Share Calculation}
+    F -->|Proportional to LP %| B
+    B -->|9. Return Token A + Token B| A
+
+    G[Admin] -->|Pause/Unpause| B
+    B -->|Emit Events| H[Off-chain Indexer]
+
+    style B fill:#4CAF50,stroke:#2E7D32,color:#fff
+    style A fill:#2196F3,stroke:#1976D2,color:#fff
+    style D fill:#FF6B6B,stroke:#C92A2A,color:#fff
+    style G fill:#FF9800,stroke:#F57C00,color:#fff
+```
+
 ### Core Components
 
 1. **Pool<TokenA, TokenB>**: Generic liquidity pool object
@@ -33,6 +60,73 @@ amount_out = (amount_in * fee_multiplier * reserve_out) / (reserve_in + amount_i
 ```
 
 Where `fee_multiplier = 0.997` (0.3% fee)
+
+### Add Liquidity Flow
+
+```mermaid
+sequenceDiagram
+    participant LP as Liquidity Provider
+    participant Pool as AMM Pool
+    participant LPToken as LP Token Supply
+
+    LP->>Pool: add_liquidity(token_a, token_b)
+    Pool->>Pool: Check if paused
+
+    alt First Liquidity
+        Pool->>Pool: lp_tokens = sqrt(amount_a * amount_b)
+    else Subsequent Liquidity
+        Pool->>Pool: Calculate proportional LP tokens
+        Note over Pool: lp = min(a * total_lp / reserve_a, b * total_lp / reserve_b)
+    end
+
+    Pool->>Pool: Update reserves
+    Pool->>LPToken: Mint LP tokens
+    LPToken-->>LP: Return LP tokens
+    Pool->>Pool: Emit AddLiquidityEvent
+```
+
+### Swap Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant Trader
+    participant Pool as AMM Pool
+    participant Formula as x*y=k
+
+    Trader->>Pool: swap_a_to_b(amount_in, min_out)
+    Pool->>Pool: Check if paused
+    Pool->>Formula: Calculate amount_out
+    Note over Formula: amount_in_with_fee = amount_in * 0.997<br/>amount_out = (amount_in_with_fee * reserve_b) / (reserve_a + amount_in_with_fee)
+    Formula-->>Pool: Return amount_out
+
+    Pool->>Pool: Check slippage protection
+    Note over Pool: require(amount_out >= min_out)
+
+    Pool->>Pool: Update reserves
+    Note over Pool: reserve_a += amount_in<br/>reserve_b -= amount_out
+
+    Pool->>Trader: Transfer token_b
+    Pool->>Pool: Emit SwapEvent
+```
+
+### Remove Liquidity Flow
+
+```mermaid
+sequenceDiagram
+    participant LP as Liquidity Provider
+    participant Pool as AMM Pool
+    participant LPToken as LP Token Supply
+
+    LP->>Pool: remove_liquidity(lp_tokens)
+    Pool->>Pool: Check if paused
+    Pool->>Pool: Calculate share
+    Note over Pool: amount_a = lp_tokens * reserve_a / total_lp<br/>amount_b = lp_tokens * reserve_b / total_lp
+
+    Pool->>LPToken: Burn LP tokens
+    Pool->>Pool: Update reserves
+    Pool->>LP: Transfer token_a + token_b
+    Pool->>Pool: Emit RemoveLiquidityEvent
+```
 
 ## Smart Contract Functions
 

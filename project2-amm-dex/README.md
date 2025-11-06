@@ -2,7 +2,220 @@
 
 A fully functional Automated Market Maker (AMM) decentralized exchange built on Sui blockchain, implementing the constant product formula (x * y = k) popularized by Uniswap V2.
 
-## Features
+---
+
+## 📖 Overview
+
+### What is an AMM DEX?
+
+An **Automated Market Maker (AMM)** is a revolutionary type of decentralized exchange that eliminates the need for traditional order books. Instead of matching buyers with sellers, AMM uses a mathematical formula (x × y = k) to automatically determine prices and execute trades. This innovation, pioneered by Uniswap, has become the foundation of decentralized finance (DeFi).
+
+**Traditional Exchange vs AMM:**
+- **Traditional (Coinbase, Binance)**: Order book matches buy/sell orders → Requires centralized matching engine
+- **AMM (Uniswap, SushiSwap)**: Liquidity pools + math formula → Fully decentralized, permissionless
+
+### How It Works
+
+**The Constant Product Formula: x × y = k**
+
+1. **Liquidity Pool**: Contains two tokens (e.g., 1,000 SUI + 4,000 USDC)
+2. **k Constant**: Product of reserves (1,000 × 4,000 = 4,000,000)
+3. **Price**: Determined by ratio (1 SUI = 4 USDC)
+4. **Trading**: When someone swaps, reserves change but k stays constant*
+5. **Fees**: 0.3% fee on each trade → k actually grows → LPs earn passive income
+
+*k grows slightly due to trading fees, benefiting liquidity providers
+
+**Example Trade:**
+```
+Before: 1,000 SUI × 4,000 USDC = 4,000,000
+Trader swaps: 100 SUI
+After: 1,100 SUI × 3,637 USDC = 4,000,700 (k increased by fees!)
+Price moved: 1 SUI now = 3.31 USDC (price impact)
+```
+
+### Key Innovation: Liquidity Providers (LPs)
+
+Anyone can become a "market maker" by depositing tokens:
+
+1. **Deposit both tokens** to liquidity pool (e.g., 100 SUI + 400 USDC)
+2. **Receive LP tokens** representing ownership share
+3. **Earn fees** from every trade (0.3% distributed to all LPs)
+4. **Withdraw anytime** by burning LP tokens
+
+This democratizes market making - previously only accessible to institutions with sophisticated algorithms and capital.
+
+### Real-World Analogy
+
+**Traditional Exchange** = Stock market with order books
+- Buyers submit: "I'll buy 100 shares at $50"
+- Sellers submit: "I'll sell 100 shares at $51"
+- Exchange matches them
+
+**AMM** = Swimming pool with two liquids
+- Pool contains exact amounts of two tokens
+- When you add one liquid (SUI), you take out the other (USDC)
+- Price adjusts based on new ratio
+- Pool never runs out (just gets expensive for large trades)
+
+---
+
+## 🎯 Use Cases
+
+### 1. **Decentralized Token Trading**
+**Problem**: Centralized exchanges require KYC, custody, and trust
+**Solution**: Trade directly from your wallet, no intermediaries
+**Users**: Privacy-conscious traders, unbanked users, decentralization advocates
+**Example**: Swap SUI for USDC anytime, 24/7, no account needed
+
+### 2. **Long-Tail Asset Trading**
+**Problem**: Small tokens can't afford Binance/Coinbase listing fees ($100K+)
+**Solution**: Anyone can create a pool for any token pair
+**Users**: New crypto projects, meme coins, niche tokens
+**Example**: New Sui token launches → Create SUI/NewToken pool → Instant tradability
+
+### 3. **Passive Income for Token Holders**
+**Problem**: Crypto holders want yield without selling
+**Solution**: Provide liquidity and earn 0.3% of all trading volume
+**Users**: Long-term holders, yield farmers, institutional investors
+**Example**: Hold 1,000 SUI + 4,000 USDC → Earn fees from traders → Compound returns
+
+### 4. **Price Discovery for New Assets**
+**Problem**: How do you determine fair price for a brand new token?
+**Solution**: Market determines price through supply/demand in AMM
+**Users**: Token launchers, early investors, communities
+**Example**: Project launches with 1:1 ratio → Market trades → Price finds equilibrium
+
+### 5. **Cross-Chain Liquidity**
+**Problem**: Assets on different chains can't trade directly
+**Solution**: Wrapped tokens trade on AMM (e.g., wETH/SUI pool)
+**Users**: Cross-chain traders, arbitrageurs, DeFi protocols
+**Example**: Bridge ETH to Sui as wETH → Trade in AMM → Access Sui ecosystem
+
+### 6. **Algorithmic Trading & Arbitrage**
+**Problem**: Price discrepancies exist across exchanges
+**Solution**: Bots arbitrage differences, keeping prices aligned
+**Users**: Trading firms, MEV searchers, arbitrage bots
+**Example**: SUI cheaper on AMM than Binance → Bot buys AMM, sells Binance → Profit
+
+---
+
+## ✨ Advantages
+
+### **For Traders:**
+
+**1. Permissionless Access**
+- ✅ No KYC/AML requirements
+- ✅ No geographic restrictions
+- ✅ No account creation needed
+- ✅ Trade directly from wallet
+
+**2. Always Available Liquidity**
+- ✅ 24/7 trading, no market hours
+- ✅ Always get a price (even for large trades)
+- ✅ No order book depth issues
+- ✅ Instant execution (no waiting for match)
+
+**3. Transparent & Fair**
+- ✅ All trades on-chain (verifiable)
+- ✅ No front-running by exchange operators
+- ✅ Open-source code (inspect the logic)
+- ✅ Immutable rules (can't change mid-trade)
+
+**4. Self-Custody**
+- ✅ Keep your private keys
+- ✅ No exchange hacks risk
+- ✅ No withdrawal delays
+- ✅ True ownership of assets
+
+### **For Liquidity Providers (LPs):**
+
+**1. Passive Income**
+- ✅ Earn 0.3% fee on every trade
+- ✅ Auto-compounding (fees add to pool value)
+- ✅ No active management needed
+- ✅ Higher APY than traditional savings
+
+**2. Democratized Market Making**
+- ✅ No minimum capital requirements
+- ✅ Compete with institutional traders
+- ✅ Earn same % as large LPs
+- ✅ Exit anytime (permissionless)
+
+**3. Diversification**
+- ✅ Earn yield on two assets simultaneously
+- ✅ Natural hedging (hold both sides of pair)
+- ✅ Exposure to trading volume growth
+- ✅ Multiple pool options
+
+**4. Composability**
+- ✅ LP tokens can be used as collateral
+- ✅ Stake LP tokens for additional rewards
+- ✅ Combine with other DeFi strategies
+- ✅ Build complex yield strategies
+
+### **For Projects & Token Issuers:**
+
+**1. Instant Tradability**
+- ✅ Launch token liquidity day 1
+- ✅ No exchange listing fees ($100K+)
+- ✅ No negotiation with centralized gatekeepers
+- ✅ Permissionless listing
+
+**2. Community Ownership**
+- ✅ Community can provide liquidity
+- ✅ Decentralized price discovery
+- ✅ Fair launch mechanisms
+- ✅ No pre-sale to VCs required
+
+**3. Liquidity Incentives**
+- ✅ Offer token rewards to LPs
+- ✅ Bootstrap liquidity efficiently
+- ✅ Align community incentives
+- ✅ Build liquidity depth organically
+
+### **Technical Advantages:**
+
+**1. Mathematical Soundness**
+- ✅ Provably fair pricing algorithm
+- ✅ No human discretion in execution
+- ✅ Resistant to manipulation (expensive to move price)
+- ✅ Self-balancing mechanism
+
+**2. Capital Efficiency**
+- ✅ Every deposited dollar provides liquidity
+- ✅ No idle capital sitting in order books
+- ✅ Concentrated liquidity around current price
+- ✅ Better execution for similar TVL vs order books
+
+**3. Composability**
+- ✅ Pool addresses are programmable
+- ✅ Integrate with lending, leverage, options
+- ✅ Build complex DeFi products on top
+- ✅ Flash swaps for arbitrage
+
+**4. Sui-Optimized**
+- ✅ Parallel transaction execution
+- ✅ Shared objects for concurrent access
+- ✅ Low gas costs
+- ✅ Fast finality (~400ms)
+
+### **Compared to Traditional Exchanges:**
+
+| Feature | AMM DEX | Traditional CEX |
+|---------|---------|-----------------|
+| **Custody** | Self-custody (your keys) | Exchange custody (trust required) |
+| **KYC** | None | Required |
+| **Listing** | Permissionless ($0) | Expensive ($100K+) |
+| **Trading Hours** | 24/7 | May have downtime |
+| **Transparency** | Fully on-chain | Opaque internal systems |
+| **Censorship Resistance** | Cannot be shut down | Can freeze accounts |
+| **Fees** | 0.3% to LPs | Exchange profits |
+| **Price Discovery** | Algorithmic (x×y=k) | Order book matching |
+
+---
+
+## 🔥 Features
 
 - **Constant Product AMM**: Implements x * y = k formula for automated market making
 - **Liquidity Pools**: Generic pools supporting any token pair

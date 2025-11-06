@@ -61,6 +61,35 @@ sequenceDiagram
     Vault->>Vault: Emit DepositEvent
 ```
 
+#### Deposit Flow Explanation:
+
+**Step 1: User Initiates Deposit**
+- User calls `deposit()` function with desired token amount
+- Transaction must include sufficient SUI tokens to deposit
+
+**Step 2: Security Check**
+- Vault checks if operations are paused (emergency safety)
+- If paused, transaction reverts
+
+**Step 3: Share Calculation**
+- Formula: `shares = (deposit_amount × total_shares) / current_balance`
+- **Example**: If vault has 1000 tokens, 1000 total shares, and user deposits 100:
+  - `shares = (100 × 1000) / 1000 = 100 shares`
+- This ensures proportional ownership regardless of when you deposit
+
+**Step 4: Receipt Minting**
+- VaultReceipt NFT is created with user's share count
+- Receipt acts as proof of ownership (like a bank deposit certificate)
+
+**Step 5: State Update**
+- Vault balance increases by deposit amount
+- Total shares increase by calculated shares
+- These updates maintain the share-to-value ratio
+
+**Step 6: Event Emission**
+- DepositEvent emitted with: user address, amount, shares, timestamp
+- Enables off-chain tracking and analytics
+
 ### Withdrawal Flow Diagram
 
 ```mermaid
@@ -78,6 +107,35 @@ sequenceDiagram
     Vault->>Vault: Update balance & total_shares
     Vault->>Vault: Emit WithdrawEvent
 ```
+
+#### Withdrawal Flow Explanation:
+
+**Step 1: User Initiates Withdrawal**
+- User calls `withdraw()` with their VaultReceipt
+- Receipt must be owned by the caller (enforced by Sui's object ownership)
+
+**Step 2: Security Check**
+- Vault verifies operations are not paused
+- Prevents withdrawals during security incidents
+
+**Step 3: Amount Calculation**
+- Formula: `amount = (user_shares × vault_balance) / total_shares`
+- **Example**: User has 100 shares, vault has 1100 tokens total, 1000 total shares:
+  - `amount = (100 × 1100) / 1000 = 110 tokens`
+  - User deposited 100 but receives 110 (10% yield accrued!)
+- This automatically distributes proportional yield
+
+**Step 4: Receipt Burning**
+- VaultReceipt is destroyed (cannot be reused)
+- Prevents double-withdrawal attacks
+
+**Step 5: Token Transfer**
+- Calculated amount transferred from vault to user
+- Vault balance and total shares decrease accordingly
+
+**Step 6: Event Emission**
+- WithdrawEvent records: user, shares burned, amount withdrawn, timestamp
+- Creates auditable history
 
 ### Key Design Patterns
 

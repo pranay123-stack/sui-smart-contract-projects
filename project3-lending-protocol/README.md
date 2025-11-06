@@ -105,6 +105,57 @@ sequenceDiagram
     Pool->>Pool: Emit BorrowEvent
 ```
 
+#### Borrow Flow Explanation:
+
+**Step 1: Borrower Initiates Loan**
+- Borrower provides collateral tokens and specifies borrow amount
+- Must provide MORE collateral than borrowed amount (overcollateralized)
+
+**Step 2: Security & Timing**
+- Pool checks if paused (emergency safety)
+- Gets current timestamp from Clock object
+- This timing is crucial for interest calculations
+
+**Step 3: Interest Accrual**
+- Pool accrues all outstanding interest since last update
+- Formula: `interest = principal × rate × time_elapsed`
+- Updates total_borrowed to reflect current debt including interest
+- Ensures accurate collateral ratio calculations
+
+**Step 4: Collateral Factor Check**
+- **Critical Safety Check**: `require(borrow_amount <= collateral × 75%)`
+- **Example**:
+  - Borrower provides 10,000 SUI as collateral
+  - Maximum borrow: `10,000 × 0.75 = 7,500 SUI`
+  - If requesting 8,000 SUI → Transaction REVERTS
+  - If requesting 7,000 SUI → Transaction SUCCEEDS
+- The 75% ensures protocol safety (25% buffer for price fluctuations)
+
+**Step 5: Liquidity Check**
+- Verifies pool has enough unborrowed funds
+- `available = total_deposits - total_borrowed`
+- Prevents over-borrowing from the pool
+
+**Step 6: Create Borrow Position**
+- BorrowPosition NFT created with:
+  - `collateral_amount`: Locked collateral (e.g., 10,000 SUI)
+  - `debt_shares`: Proportional debt ownership
+- Debt shares work like inverse deposits - represent share of total debt
+- **Debt Share Calculation**: `shares = (borrow_amount × total_debt_shares) / total_borrowed`
+
+**Step 7: Pool State Update**
+- `total_borrowed` increases by borrow amount
+- `total_debt_shares` increases by calculated shares
+- Collateral locked in position (cannot be withdrawn until loan repaid)
+
+**Step 8: Transfer Borrowed Tokens**
+- Borrower receives requested token amount
+- Can now use these tokens (e.g., for leveraged farming, short positions)
+
+**Step 9: Event Emission**
+- BorrowEvent logs: borrower, collateral amount, borrow amount, debt shares
+- Creates audit trail for protocol analytics
+
 ### Liquidation Flow Diagram
 
 ```mermaid
@@ -134,6 +185,83 @@ sequenceDiagram
         Pool-->>Liquidator: Revert: Position healthy
     end
 ```
+
+#### Liquidation Flow Explanation:
+
+**What is Liquidation?**
+When a borrower's debt grows too large relative to their collateral (due to interest accrual or price changes), the position becomes "unhealthy" and can be liquidated. Liquidators are incentivized with a bonus to maintain protocol solvency.
+
+**Step 1: Liquidator Identifies Unhealthy Position**
+- Third-party liquidator monitors positions
+- Identifies position with health factor < 1.0
+- Prepares repayment tokens to liquidate
+
+**Step 2-3: Security & Interest Accrual**
+- Pool checks if paused
+- Gets current time and accrues all interest
+- **Critical**: Interest must be updated before health calculation
+
+**Step 4: Health Factor Calculation**
+- Formula: `health_factor = (collateral × liquidation_threshold) / current_debt`
+- Using 80% liquidation threshold:
+
+**Example Scenario:**
+```
+Initial Loan:
+- Collateral: 10,000 SUI
+- Borrowed: 7,000 SUI
+- Health Factor: (10,000 × 0.80) / 7,000 = 8,000 / 7,000 = 1.14 ✅ HEALTHY
+
+After Interest Accrues:
+- Collateral: 10,000 SUI (unchanged)
+- Debt: 8,500 SUI (grew by 21% due to interest)
+- Health Factor: (10,000 × 0.80) / 8,500 = 8,000 / 8,500 = 0.94 ⚠️ LIQUIDATABLE!
+```
+
+**Step 5: Liquidation Decision**
+
+**Case A - Health Factor < 1.0 (Position Unhealthy):**
+- Liquidation proceeds
+- Protocol protects lenders by closing risky position
+
+**Case B - Health Factor >= 1.0 (Position Healthy):**
+- Transaction reverts
+- Position owner is safe
+- Liquidator wastes gas (incentivizes accuracy)
+
+**Step 6: Calculate Liquidation Amounts**
+- **Liquidator repays**: Amount of debt (e.g., 8,500 SUI)
+- **Liquidator receives**: `repayment × 1.05 = 8,500 × 1.05 = 8,925 SUI`
+- **5% Liquidation Bonus**: Incentive for liquidators (8,925 - 8,500 = 425 SUI profit)
+- **Remaining collateral**: `10,000 - 8,925 = 1,075 SUI` (returned to borrower or burned)
+
+**Why 5% Bonus?**
+- Compensates liquidators for gas costs and risk
+- Creates economic incentive to keep protocol healthy
+- Similar to Aave (varies 0-10%), Compound (8%), MakerDAO (13%)
+
+**Step 7: Position Update**
+- If fully liquidated: BorrowPosition burned
+- If partially liquidated: Position debt and collateral reduced proportionally
+
+**Step 8: Pool State Update**
+- `total_borrowed` decreases by repaid amount
+- Pool becomes healthier
+- Available liquidity increases
+
+**Step 9: Collateral Transfer**
+- Liquidator receives collateral + 5% bonus
+- Immediate profit if they have tokens to repay debt
+
+**Step 10: Event Emission**
+- LiquidationEvent records: position, liquidator, repay amount, collateral seized
+- Important for monitoring protocol health
+
+**Key Insight:**
+The gap between collateral factor (75%) and liquidation threshold (80%) provides a safety buffer:
+- Borrow up to 75% of collateral
+- Liquidatable at 80% of collateral
+- This 5% gap protects against rapid price movements
 
 ### Interest Rate Model
 

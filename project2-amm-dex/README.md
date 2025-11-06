@@ -85,6 +85,44 @@ sequenceDiagram
     Pool->>Pool: Emit AddLiquidityEvent
 ```
 
+#### Add Liquidity Flow Explanation:
+
+**Step 1: Liquidity Provider Initiates**
+- LP calls `add_liquidity()` with both Token A and Token B
+- Both tokens must be provided (you can't add just one side)
+
+**Step 2: Security Check**
+- Pool verifies it's not paused
+- Ensures pool is operational
+
+**Step 3: LP Token Calculation (Two Cases)**
+
+**Case A - First Liquidity (Pool is Empty):**
+- Formula: `lp_tokens = sqrt(amount_a × amount_b)`
+- **Example**: Adding 100 Token A and 400 Token B:
+  - `lp_tokens = sqrt(100 × 400) = sqrt(40,000) = 200 LP tokens`
+- Geometric mean ensures fair initial pricing
+
+**Case B - Subsequent Liquidity (Pool Has Reserves):**
+- Formula: `lp = min((a × total_lp / reserve_a), (b × total_lp / reserve_b))`
+- **Example**: Pool has 1000 A, 4000 B, 10,000 LP tokens. Adding 100 A and 400 B:
+  - Option 1: `(100 × 10,000) / 1000 = 1000 LP`
+  - Option 2: `(400 × 10,000) / 4000 = 1000 LP`
+  - `lp = min(1000, 1000) = 1000 LP tokens`
+- Maintains current pool ratio to prevent price manipulation
+
+**Step 4: Reserve Update**
+- Pool reserves increase by deposited amounts
+- Maintains the x × y = k invariant
+
+**Step 5: LP Token Minting**
+- LP tokens represent proportional ownership of pool
+- Can be burned later to reclaim liquidity + earned fees
+
+**Step 6: Event Emission**
+- AddLiquidityEvent records: LP address, amounts added, LP tokens minted
+- Enables tracking of liquidity provision history
+
 ### Swap Flow Diagram
 
 ```mermaid
@@ -108,6 +146,46 @@ sequenceDiagram
     Pool->>Trader: Transfer token_b
     Pool->>Pool: Emit SwapEvent
 ```
+
+#### Swap Flow Explanation:
+
+**Step 1: Trader Initiates Swap**
+- Trader calls `swap_a_to_b()` with input amount and minimum output
+- `min_out` protects against unfavorable price movements (slippage protection)
+
+**Step 2: Security Check**
+- Verifies pool is not paused
+- Ensures trading is active
+
+**Step 3: Calculate Output Amount (x × y = k Formula)**
+- **Fee Deduction**: `amount_in_with_fee = amount_in × 0.997` (0.3% fee kept by pool)
+- **Output Calculation**: `amount_out = (amount_in_with_fee × reserve_b) / (reserve_a + amount_in_with_fee)`
+
+**Real Example:**
+- Pool: 1000 Token A, 4000 Token B (price: 1 A = 4 B)
+- Trader swaps 100 Token A
+- Fee deduction: `100 × 0.997 = 99.7 A (after fee)`
+- Output: `amount_out = (99.7 × 4000) / (1000 + 99.7) = 398,800 / 1099.7 ≈ 362.7 B`
+- **Price impact**: Expected ~400 B, got 362.7 B (9.3% price impact due to pool size)
+
+**Step 4: Slippage Protection**
+- Checks: `amount_out >= min_out`
+- If trader set `min_out = 360`, trade succeeds (362.7 >= 360)
+- If trader set `min_out = 380`, trade reverts (362.7 < 380)
+- Protects traders from front-running and excessive price impact
+
+**Step 5: Reserve Update**
+- `reserve_a` increases by input amount (1000 → 1100)
+- `reserve_b` decreases by output amount (4000 → 3637.3)
+- New k: `1100 × 3637.3 ≈ 4,001,030` (slightly higher due to 0.3% fee, benefiting LPs!)
+
+**Step 6: Token Transfer**
+- Transfer calculated Token B to trader
+- Trader receives exact `amount_out`
+
+**Step 7: Event Emission**
+- SwapEvent records: trader, input amount, output amount, fee collected
+- Creates transaction history for analytics
 
 ### Remove Liquidity Flow
 

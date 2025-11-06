@@ -354,28 +354,34 @@ If you find this project helpful, consider supporting my work:
 
 ### 💳 Crypto Payments
 
-**Solana (USDT/USDC):**
+**Solana (USDT):**
 ```
-9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin
-```
-
-**Ethereum/Polygon (MetaMask - USDT/USDC/ETH):**
-```
-0x1234567890abcdef1234567890abcdef12345678
-```
-
-**Bitcoin (BTC):**
-```
-bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh
+Network: Solana
+Token: USDT
+Address: FESni41iopVgF1RLLu6YxpWpYCePD4f7zvuCx9xBGLbX
 ```
 
 ### 💵 Fiat Payments
 
 **PayPal:**
-[https://paypal.me/pranaydev](https://paypal.me/pranaydev)
+- Email: pkumarsaurabh000@gmail.com
+- PayPal.me: [https://paypal.me/SBarnwal82](https://paypal.me/SBarnwal82)
+- Name: Saurabh Kumar Barnwal
 
-**Buy Me a Coffee:**
-[https://www.buymeacoffee.com/pranaydev](https://www.buymeacoffee.com/pranaydev)
+**UPI (India):**
+```
+UPI ID: pranaygaurav4555@okhdfcbank
+```
+
+**Bank Transfer (India - HDFC Bank):**
+```
+Account Number: 50100254478760
+IFSC Code: HDFC0000344
+Account Name: PRANAY GAURAV
+Account Type: Savings
+Branch: Muzaffarpur, Bihar
+Bank: HDFC Bank
+```
 
 ---
 
@@ -391,10 +397,10 @@ I'm a **Web3 Smart Contract Engineer** specializing in:
 
 ### 🔗 Connect With Me
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/pranay-blockchain-dev)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/pranay-gaurav-290a30150/)
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/pranay123-stack)
-[![Email](https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:pranay.web3.dev@gmail.com)
-[![WhatsApp](https://img.shields.io/badge/WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://wa.me/919876543210)
+[![Email](https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:pranaygaurav4555@gmail.com)
+[![WhatsApp](https://img.shields.io/badge/WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://wa.me/918235617269)
 
 ### 💼 Hire Me for:
 
@@ -408,15 +414,16 @@ I'm a **Web3 Smart Contract Engineer** specializing in:
 
 **Book a 1-on-1 Consultation:**
 
-[![Calendly](https://img.shields.io/badge/Calendly-006BFF?style=for-the-badge&logo=calendly&logoColor=white)](https://calendly.com/pranay-web3-dev/30min)
-[![Topmate](https://img.shields.io/badge/Topmate-FF6B6B?style=for-the-badge&logo=topmate&logoColor=white)](https://topmate.io/pranay_blockchain)
+[![Calendly](https://img.shields.io/badge/Calendly-006BFF?style=for-the-badge&logo=calendly&logoColor=white)](https://calendly.com/pranaygaurav4555)
+[![Topmate](https://img.shields.io/badge/Topmate-FF6B6B?style=for-the-badge&logo=topmate&logoColor=white)](https://topmate.io/pranay_gaurav12)
 
 ### 📧 Direct Contact
 
-- **Email:** pranay.web3.dev@gmail.com
-- **LinkedIn:** [linkedin.com/in/pranay-blockchain-dev](https://linkedin.com/in/pranay-blockchain-dev)
-- **WhatsApp:** [+91-987-654-3210](https://wa.me/919876543210)
-- **Telegram:** [@pranay_web3](https://t.me/pranay_web3)
+- **Email:** pranaygaurav4555@gmail.com
+- **LinkedIn:** [linkedin.com/in/pranay-gaurav-290a30150](https://www.linkedin.com/in/pranay-gaurav-290a30150/)
+- **WhatsApp:** [+91-823-561-7269](https://wa.me/918235617269)
+- **Calendly:** [calendly.com/pranaygaurav4555](https://calendly.com/pranaygaurav4555)
+- **Topmate:** [topmate.io/pranay_gaurav12](https://topmate.io/pranay_gaurav12)
 
 ---
 
@@ -461,10 +468,11 @@ This repository showcases:
 ### 📅 Let's Talk
 
 **Quick Contact:**
-- 📧 Email: your.email@example.com
-- 📱 WhatsApp: [Message Me](https://wa.me/your-number)
-- 📞 Calendly: [Book a Call](https://calendly.com/your-link)
-- 💬 LinkedIn: [Connect](https://linkedin.com/in/your-profile)
+- 📧 Email: pranaygaurav4555@gmail.com
+- 📱 WhatsApp: [Message Me](https://wa.me/918235617269)
+- 📞 Calendly: [Book a Call](https://calendly.com/pranaygaurav4555)
+- 💬 LinkedIn: [Connect](https://www.linkedin.com/in/pranay-gaurav-290a30150/)
+- 🎯 Topmate: [Schedule Session](https://topmate.io/pranay_gaurav12)
 
 ---
 
@@ -528,7 +536,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 Watch this repo for updates or follow me:
 - GitHub: [@pranay123-stack](https://github.com/pranay123-stack)
-- LinkedIn: [Your Profile](https://linkedin.com/in/your-profile)
+- LinkedIn: [Pranay Gaurav](https://www.linkedin.com/in/pranay-gaurav-290a30150/)
 
 ---
 
@@ -544,9 +552,10 @@ git clone https://github.com/pranay123-stack/sui-smart-contract-projects.git
 
 ### 💬 Questions? Let's Connect!
 
-[![Email](https://img.shields.io/badge/Email-Me-red?style=for-the-badge)](mailto:your.email@example.com)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue?style=for-the-badge)](https://linkedin.com/in/your-profile)
-[![Calendly](https://img.shields.io/badge/Calendly-Book-orange?style=for-the-badge)](https://calendly.com/your-link)
+[![Email](https://img.shields.io/badge/Email-Me-red?style=for-the-badge)](mailto:pranaygaurav4555@gmail.com)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue?style=for-the-badge)](https://www.linkedin.com/in/pranay-gaurav-290a30150/)
+[![Calendly](https://img.shields.io/badge/Calendly-Book-orange?style=for-the-badge)](https://calendly.com/pranaygaurav4555)
+[![Topmate](https://img.shields.io/badge/Topmate-Schedule-purple?style=for-the-badge)](https://topmate.io/pranay_gaurav12)
 
 ---
 

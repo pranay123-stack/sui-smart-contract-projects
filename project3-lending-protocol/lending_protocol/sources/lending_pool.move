@@ -244,32 +244,69 @@ module lending_protocol::lending_pool {
 
     // ======== Functions ========
 
-    /// Create a new lending pool
+    /// Create a new lending pool for a specific asset type
+    ///
+    /// Initializes a lending pool where users can deposit assets to earn interest
+    /// and borrow against collateral. Similar to creating a Compound cToken market.
+    ///
+    /// Initial state:
+    /// - Zero deposits and borrows
+    /// - Borrow index starts at PRECISION (10000)
+    /// - Pool is unpaused and ready for use
+    /// - Caller becomes admin
+    ///
+    /// # Type Parameter
+    /// * `T` - Asset type for this pool (e.g., SUI)
+    ///
+    /// # Arguments
+    /// * `ctx` - Transaction context
+    ///
+    /// # Returns
+    /// * Shares LendingPool globally (anyone can deposit/borrow)
+    /// * Transfers AdminCap to caller (for emergency controls)
+    ///
+    /// # Events
+    /// * Emits `PoolCreated` with pool ID and admin address
+    ///
+    /// # Example
+    /// ```
+    /// // Create SUI lending pool
+    /// create_pool<SUI>(ctx);
+    /// // Now anyone can deposit SUI to earn interest
+    /// // Or borrow SUI with SUI collateral
+    /// ```
     public entry fun create_pool<T>(ctx: &mut TxContext) {
+        // Create unique ID for new pool
         let pool_uid = object::new(ctx);
         let pool_id = object::uid_to_inner(&pool_uid);
 
+        // Initialize lending pool with zero state
         let pool = LendingPool<T> {
-            id: pool_uid,
-            total_deposits: balance::zero(),
-            total_borrowed: 0,
-            total_borrow_shares: 0,
-            last_accrual_time: 0,
-            borrow_index: PRECISION,
-            is_paused: false,
-            admin: ctx.sender(),
+            id: pool_uid,                        // Unique identifier
+            total_deposits: balance::zero(),     // Start with 0 deposits
+            total_borrowed: 0,                   // No borrows yet
+            total_borrow_shares: 0,              // No borrow shares issued
+            last_accrual_time: 0,                // Will be set on first interaction
+            borrow_index: PRECISION,             // Start at 10000 (1.0)
+            is_paused: false,                    // Pool starts active
+            admin: ctx.sender(),                 // Caller is admin
         };
 
+        // Create admin capability for emergency controls
         let admin_cap = AdminCap {
-            id: object::new(ctx),
+            id: object::new(ctx),  // Unique cap ID
         };
 
+        // Emit creation event
         event::emit(PoolCreated<T> {
             pool_id,
             admin: ctx.sender(),
         });
 
+        // Make pool publicly accessible
         transfer::share_object(pool);
+
+        // Transfer admin capability to creator
         transfer::transfer(admin_cap, ctx.sender());
     }
 

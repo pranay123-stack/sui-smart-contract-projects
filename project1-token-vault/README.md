@@ -165,6 +165,211 @@ sequenceDiagram
 - `is_paused(vault)` - Check vault status
 - `calculate_share_value(vault, shares)` - Calculate current value of shares
 
+---
+
+## 📚 Complete Usage Example
+
+### Real-World Scenario: Alice & Bob Use the Vault
+
+Let's walk through a complete example showing how users interact with the vault:
+
+#### Step 1: Admin Creates the Vault
+
+```move
+// Admin initializes a new vault
+let admin_cap = vault::create_vault(ctx);
+// Vault is now created and shared
+// Admin receives AdminCap for privileged operations
+```
+
+**Result:**
+- New Vault object created (shared, accessible by everyone)
+- Vault balance: 0 SUI
+- Total shares: 0
+- Admin receives AdminCap capability
+
+---
+
+#### Step 2: Alice Deposits 1,000 SUI (First Depositor)
+
+```move
+// Alice deposits 1,000 SUI
+let deposit_coin = coin::mint_for_testing<SUI>(1000, ctx);
+let receipt = vault::deposit(&mut vault, deposit_coin, ctx);
+
+// Alice receives VaultReceipt with shares
+```
+
+**Calculation:**
+```
+First deposit, so:
+shares = deposit_amount = 1,000 shares
+```
+
+**State After:**
+- Vault balance: 1,000 SUI
+- Total shares: 1,000
+- Alice's receipt: 1,000 shares
+- Alice's ownership: 100%
+
+---
+
+#### Step 3: Bob Deposits 500 SUI (Second Depositor)
+
+```move
+// Bob deposits 500 SUI
+let deposit_coin = coin::mint_for_testing<SUI>(500, ctx);
+let receipt = vault::deposit(&mut vault, deposit_coin, ctx);
+```
+
+**Calculation:**
+```
+shares = (deposit_amount × total_shares) / vault_balance
+shares = (500 × 1,000) / 1,000 = 500 shares
+```
+
+**State After:**
+- Vault balance: 1,500 SUI
+- Total shares: 1,500
+- Bob's receipt: 500 shares
+- Alice's ownership: 66.67% (1,000/1,500)
+- Bob's ownership: 33.33% (500/1,500)
+
+---
+
+#### Step 4: Admin Accrues 150 SUI Yield
+
+```move
+// Vault earned yield from farming/lending
+let yield_coin = coin::mint_for_testing<SUI>(150, ctx);
+vault::accrue_yield(&mut vault, &admin_cap, yield_coin, ctx);
+```
+
+**State After:**
+- Vault balance: 1,650 SUI (+150 yield)
+- Total shares: 1,500 (unchanged)
+- **Share value increased**: Each share now worth 1.1 SUI (1,650/1,500)
+
+**Alice's value**: 1,000 shares × 1.1 = 1,100 SUI (started with 1,000)
+**Bob's value**: 500 shares × 1.1 = 550 SUI (started with 500)
+
+---
+
+#### Step 5: Alice Withdraws (Takes Profit)
+
+```move
+// Alice withdraws using her receipt
+let withdrawn = vault::withdraw(&mut vault, receipt, ctx);
+// Alice's receipt is burned
+```
+
+**Calculation:**
+```
+amount = (shares × vault_balance) / total_shares
+amount = (1,000 × 1,650) / 1,500 = 1,100 SUI
+```
+
+**Result:**
+- Alice receives: **1,100 SUI** (100 SUI profit = 10% yield!)
+- Alice's receipt: BURNED
+- Vault balance: 550 SUI
+- Total shares: 500 (only Bob remains)
+
+---
+
+#### Step 6: Carol Deposits 550 SUI After Yield
+
+```move
+// New user Carol deposits
+let deposit_coin = coin::mint_for_testing<SUI>(550, ctx);
+let receipt = vault::deposit(&mut vault, deposit_coin, ctx);
+```
+
+**Calculation:**
+```
+shares = (550 × 500) / 550 = 500 shares
+```
+
+**State After:**
+- Vault balance: 1,100 SUI
+- Total shares: 1,000
+- Bob: 500 shares (50% ownership, worth 550 SUI)
+- Carol: 500 shares (50% ownership, worth 550 SUI)
+
+**Fair Distribution:** Carol deposited same amount as current vault value, so she gets same share count as Bob.
+
+---
+
+#### Step 7: Emergency - Admin Pauses Vault
+
+```move
+// Security incident detected
+vault::pause_vault(&mut vault, &admin_cap, ctx);
+```
+
+**Effect:**
+- All deposits BLOCKED
+- All withdrawals BLOCKED
+- Only admin can unpause
+- Protects user funds during incident
+
+---
+
+#### Step 8: Admin Unpauses After Fix
+
+```move
+// Issue resolved
+vault::unpause_vault(&mut vault, &admin_cap, ctx);
+```
+
+**Effect:**
+- Normal operations resume
+- Users can deposit/withdraw again
+
+---
+
+### Summary of Example
+
+| Event | Vault Balance | Total Shares | Alice Shares | Bob Shares | Carol Shares |
+|-------|---------------|--------------|--------------|------------|--------------|
+| Start | 0 | 0 | - | - | - |
+| Alice deposits 1,000 | 1,000 | 1,000 | 1,000 | - | - |
+| Bob deposits 500 | 1,500 | 1,500 | 1,000 | 500 | - |
+| Yield +150 | 1,650 | 1,500 | 1,000 | 500 | - |
+| Alice withdraws | 550 | 500 | 0 | 500 | - |
+| Carol deposits 550 | 1,100 | 1,000 | 0 | 500 | 500 |
+
+**Key Takeaways:**
+1. **Alice's ROI**: Deposited 1,000 → Withdrew 1,100 = **10% profit**
+2. **Fair distribution**: Share-based system ensures proportional ownership
+3. **Yield benefits all**: Everyone gets proportional share of yield
+4. **Security**: Admin can pause during emergencies
+5. **No loss for late joiners**: Carol gets fair share value at entry time
+
+---
+
+## 💡 Use Cases
+
+### 1. **Yield Aggregator**
+- Users deposit idle tokens
+- Vault deploys to DeFi protocols (lending, farming)
+- Yield auto-compounds and distributes proportionally
+
+### 2. **Treasury Management**
+- DAO deposits treasury funds
+- Professional management accrues yield
+- Members withdraw with earned interest
+
+### 3. **Savings Account**
+- Users deposit for passive income
+- Lower risk than direct DeFi participation
+- Easy entry/exit with VaultReceipt NFTs
+
+### 4. **Liquidity Mining**
+- Protocol deposits LP tokens
+- Vault harvests farming rewards
+- Users share in rewards proportionally
+
 ## Testing
 
 The project includes comprehensive test coverage:

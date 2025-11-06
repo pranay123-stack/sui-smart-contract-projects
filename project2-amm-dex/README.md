@@ -235,6 +235,288 @@ sequenceDiagram
 - `get_amount_out(pool, amount_in, is_a_to_b)` - Calculate swap output
 - `is_paused(pool)` - Check pool status
 
+---
+
+## 📚 Complete Usage Example
+
+### Real-World Scenario: SUI/USDC Trading Pool
+
+Let's create a complete example of running a SUI/USDC liquidity pool:
+
+#### Step 1: Create the Pool
+
+```move
+// Admin creates SUI/USDC pool
+let admin_cap = pool::create_pool_and_share<SUI, USDC>(ctx);
+```
+
+**Result:**
+- New Pool<SUI, USDC> created and shared
+- Reserve A (SUI): 0
+- Reserve B (USDC): 0
+- LP Token Supply: 0
+- Admin receives PoolAdminCap
+
+---
+
+#### Step 2: Alice Adds Initial Liquidity (Sets Initial Price)
+
+```move
+// Alice provides initial liquidity
+// She sets the price: 1 SUI = 4 USDC
+let sui_coin = coin::mint_for_testing<SUI>(1000, ctx);    // 1,000 SUI
+let usdc_coin = coin::mint_for_testing<USDC>(4000, ctx);  // 4,000 USDC
+let lp_tokens = pool::add_liquidity(&mut pool, sui_coin, usdc_coin, ctx);
+```
+
+**Calculation:**
+```
+First liquidity:
+lp_tokens = sqrt(amount_a × amount_b)
+lp_tokens = sqrt(1,000 × 4,000)
+lp_tokens = sqrt(4,000,000)
+lp_tokens = 2,000 LP tokens
+```
+
+**State After:**
+- Reserve A (SUI): 1,000
+- Reserve B (USDC): 4,000
+- LP Token Supply: 2,000
+- Alice's LP Tokens: 2,000 (100% ownership)
+- **Initial Price**: 1 SUI = 4 USDC
+- **k constant**: 1,000 × 4,000 = 4,000,000
+
+---
+
+#### Step 3: Bob Swaps 100 SUI for USDC
+
+```move
+// Bob wants to swap SUI for USDC
+let sui_in = coin::mint_for_testing<SUI>(100, ctx);
+let usdc_out = pool::swap_a_to_b(&mut pool, sui_in, 360, ctx);  // min 360 USDC
+```
+
+**Calculation:**
+```
+1. Apply 0.3% fee:
+   amount_in_with_fee = 100 × 0.997 = 99.7 SUI
+
+2. Calculate output using x*y=k:
+   amount_out = (99.7 × 4,000) / (1,000 + 99.7)
+   amount_out = 398,800 / 1,099.7
+   amount_out = 362.76 USDC
+
+3. Check slippage protection:
+   362.76 >= 360 ✅ PASS
+```
+
+**State After:**
+- Reserve A (SUI): 1,100 (+100)
+- Reserve B (USDC): 3,637.24 (-362.76)
+- **New k**: 1,100 × 3,637.24 = 4,000,964 (increased by 0.3% fee!)
+- **New Price**: 1 SUI ≈ 3.31 USDC (price moved against Bob)
+- **Bob's Result**: Paid 100 SUI, received 362.76 USDC
+- **Price Impact**: Expected ~400 USDC, got 362.76 = **9.3% slippage**
+
+---
+
+#### Step 4: Carol Adds More Liquidity
+
+```move
+// Carol adds liquidity at new price ratio
+let sui_coin = coin::mint_for_testing<SUI>(550, ctx);      // 550 SUI
+let usdc_coin = coin::mint_for_testing<USDC>(1818.62, ctx); // 1,818.62 USDC
+let lp_tokens = pool::add_liquidity(&mut pool, sui_coin, usdc_coin, ctx);
+```
+
+**Calculation:**
+```
+Must maintain current ratio: 1,100 SUI : 3,637.24 USDC
+
+Option 1 (based on SUI):
+lp = (550 × 2,000) / 1,100 = 1,000 LP tokens
+
+Option 2 (based on USDC):
+lp = (1,818.62 × 2,000) / 3,637.24 = 1,000 LP tokens
+
+Result: min(1,000, 1,000) = 1,000 LP tokens
+```
+
+**State After:**
+- Reserve A (SUI): 1,650
+- Reserve B (USDC): 5,455.86
+- LP Token Supply: 3,000
+- Alice: 2,000 LP (66.67% ownership)
+- Carol: 1,000 LP (33.33% ownership)
+- **k constant**: 1,650 × 5,455.86 = 9,002,169
+
+---
+
+#### Step 5: Dave Swaps USDC for SUI (Opposite Direction)
+
+```move
+// Dave swaps USDC back to SUI
+let usdc_in = coin::mint_for_testing<USDC>(500, ctx);
+let sui_out = pool::swap_b_to_a(&mut pool, usdc_in, 70, ctx);  // min 70 SUI
+```
+
+**Calculation:**
+```
+1. Apply 0.3% fee:
+   amount_in_with_fee = 500 × 0.997 = 498.5 USDC
+
+2. Calculate output:
+   amount_out = (498.5 × 1,650) / (5,455.86 + 498.5)
+   amount_out = 822,525 / 5,954.36
+   amount_out = 138.12 SUI
+
+3. Check slippage:
+   138.12 >= 70 ✅ PASS
+```
+
+**State After:**
+- Reserve A (SUI): 1,511.88 (-138.12)
+- Reserve B (USDC): 5,955.86 (+500)
+- **New k**: 1,511.88 × 5,955.86 = 9,005,239 (k keeps growing from fees!)
+- **Price moved back**: 1 SUI ≈ 3.94 USDC
+- **Dave's Result**: Paid 500 USDC, received 138.12 SUI
+
+---
+
+#### Step 6: Alice Removes Half Her Liquidity
+
+```move
+// Alice burns 1,000 LP tokens (half her stake)
+let lp_to_burn = coin::mint_for_testing<LP<SUI,USDC>>(1000, ctx);
+let (sui_out, usdc_out) = pool::remove_liquidity(&mut pool, lp_to_burn, ctx);
+```
+
+**Calculation:**
+```
+Alice owns 1,000 / 3,000 = 33.33% of pool
+
+SUI amount = (1,000 × 1,511.88) / 3,000 = 503.96 SUI
+USDC amount = (1,000 × 5,955.86) / 3,000 = 1,985.29 USDC
+```
+
+**Alice's P&L:**
+```
+Originally deposited:
+- 1,000 SUI
+- 4,000 USDC
+
+Now withdrawing half (50%):
+- 503.96 SUI (out of 1,000 total owned)
+- 1,985.29 USDC (out of 3,970.58 total owned)
+
+Still owns 1,000 LP tokens (remaining liquidity):
+- 503.96 SUI
+- 1,985.29 USDC
+
+Total Alice now has:
+- 1,007.92 SUI (503.96 × 2)
+- 3,970.58 USDC (1,985.29 × 2)
+
+Profit from fees:
+- +7.92 SUI
+- -29.42 USDC (impermanent loss from price change)
+- Net: Alice earned trading fees but suffered some IL
+```
+
+**State After:**
+- Reserve A (SUI): 1,007.92
+- Reserve B (USDC): 3,970.57
+- LP Token Supply: 2,000
+- Alice: 1,000 LP (50% ownership)
+- Carol: 1,000 LP (50% ownership)
+
+---
+
+#### Step 7: Check Pool Stats
+
+```move
+// Query pool information
+let (reserve_a, reserve_b) = pool::get_reserves(&pool);
+let lp_supply = pool::get_lp_supply(&pool);
+
+// Preview a swap
+let expected_out = pool::get_amount_out(&pool, 100, true);  // Swap 100 SUI
+```
+
+**Results:**
+```
+Reserves: 1,007.92 SUI, 3,970.57 USDC
+LP Supply: 2,000
+Current Price: 1 SUI = 3.94 USDC
+
+Preview 100 SUI swap:
+expected_out = (99.7 × 3,970.57) / (1,007.92 + 99.7)
+expected_out ≈ 357.5 USDC
+```
+
+---
+
+### Summary Table: Complete Lifecycle
+
+| Event | SUI Reserve | USDC Reserve | LP Supply | k Constant | Price (SUI/USDC) |
+|-------|-------------|--------------|-----------|------------|------------------|
+| Initial | 0 | 0 | 0 | 0 | - |
+| Alice adds liquidity | 1,000 | 4,000 | 2,000 | 4,000,000 | 1:4 |
+| Bob swaps 100 SUI | 1,100 | 3,637.24 | 2,000 | 4,000,964 | 1:3.31 |
+| Carol adds liquidity | 1,650 | 5,455.86 | 3,000 | 9,002,169 | 1:3.31 |
+| Dave swaps 500 USDC | 1,511.88 | 5,955.86 | 3,000 | 9,005,239 | 1:3.94 |
+| Alice removes 1,000 LP | 1,007.92 | 3,970.57 | 2,000 | 4,001,500 | 1:3.94 |
+
+---
+
+### Key Insights from Example
+
+**1. k Constant Growth:**
+- Started: 4,000,000
+- After trades: 4,001,500
+- **Growth**: 1,500 (from 0.3% trading fees)
+- This extra value is distributed to LP token holders!
+
+**2. Price Impact:**
+- Bob's large swap (10% of pool) caused 9.3% slippage
+- Smaller swaps would have less impact
+- Demonstrates importance of deep liquidity
+
+**3. Impermanent Loss:**
+- Alice provided at 1:4 ratio
+- Price changed to 1:3.94
+- She has less SUI, more USDC than if she just held
+- BUT she earned trading fees to compensate
+
+**4. Slippage Protection:**
+- Bob set `min_out = 360`, got 362.76 ✅
+- If he set `min_out = 380`, transaction would revert ❌
+- Protects against front-running and volatility
+
+---
+
+## 💡 Use Cases
+
+### 1. **Decentralized Exchange (DEX)**
+- Users trade tokens without centralized orderbook
+- No KYC, no custody, permissionless access
+- 24/7 trading with instant settlement
+
+### 2. **Liquidity Provider Revenue**
+- Earn 0.3% fee on all trades
+- Passive income from deposited tokens
+- Compounding returns as k grows
+
+### 3. **Price Discovery**
+- Market determines token prices through trades
+- Arbitrageurs keep prices aligned with other markets
+- Resistant to manipulation (costly to move price)
+
+### 4. **Token Launches**
+- New projects can bootstrap liquidity
+- Fair price discovery from day 1
+- No need for centralized exchange listing
+
 ## Testing
 
 Comprehensive test suite covering:

@@ -1,6 +1,48 @@
-/// Token Vault Module
-/// A secure vault for depositing and withdrawing tokens with yield accrual
-/// Features: deposits, withdrawals, yield mechanism, emergency pause, access control
+// ============================================================================================================
+// Token Vault Module - Production-Ready DeFi Vault
+// ============================================================================================================
+//
+// MODULE OVERVIEW:
+// This module implements a secure, share-based token vault similar to Yearn Finance vaults or Aave aTokens.
+// Users deposit tokens and receive proportional shares. When the vault earns yield, the value per share
+// increases automatically, distributing profits fairly among all depositors.
+//
+// KEY FEATURES:
+// 1. Share-Based Accounting: Fair distribution of yields using proportional ownership
+// 2. Yield Accrual: Automatic yield distribution when admin adds profits
+// 3. Emergency Pause: Admin can halt operations during security incidents
+// 4. Capability-Based Access Control: Secure admin functions using AdminCap
+// 5. Event Emissions: Complete audit trail for off-chain tracking
+//
+// ARCHITECTURE:
+// - Vault: Shared object holding all deposited tokens
+// - VaultReceipt: NFT proof of deposit, required for withdrawal
+// - AdminCap: Capability object for administrative privileges
+//
+// MATH & FORMULAS:
+// - Deposit shares: shares = (amount × total_shares) / vault_balance
+// - Withdrawal amount: amount = (shares × vault_balance) / total_shares
+// - Share value: value_per_share = vault_balance / total_shares
+//
+// SECURITY CONSIDERATIONS:
+// - Overflow protection: All arithmetic uses checked operations
+// - Access control: Only AdminCap holder can pause or accrue yield
+// - Reentrancy safety: State updates before external calls
+// - Emergency controls: Pause mechanism for incident response
+//
+// USE CASES:
+// - Yield aggregator (auto-compound across protocols)
+// - DAO treasury management
+// - Institutional crypto savings
+// - DeFi savings account
+// - Liquidity mining aggregator
+//
+// AUTHOR: Pranay Gaurav
+// VERSION: 1.0.0
+// LICENSE: MIT
+//
+// ============================================================================================================
+
 module token_vault::vault {
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};

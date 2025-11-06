@@ -1,5 +1,108 @@
-/// Lending Protocol - Overcollateralized Lending and Borrowing
-/// Features: deposits, borrows, interest accrual, liquidations, health factors
+// ============================================================================================================
+// Lending Protocol - Overcollateralized Lending & Borrowing Platform
+// ============================================================================================================
+//
+// MODULE OVERVIEW:
+// This module implements a production-ready overcollateralized lending protocol similar to Aave, Compound,
+// and Suilend. Users can deposit assets to earn interest, borrow against collateral, and liquidate
+// unhealthy positions. The protocol uses dynamic interest rates based on utilization.
+//
+// KEY FEATURES:
+// 1. Overcollateralized Borrowing: 75% collateral factor ensures protocol safety
+// 2. Dynamic Interest Rates: Utilization-based kinked rate model (2% → 32% APY)
+// 3. Share-Based Debt Tracking: Fair distribution of accrued interest
+// 4. Liquidation System: Incentivized liquidation with 5% bonus
+// 5. Health Factor Monitoring: Real-time position health calculation
+// 6. Time-Based Interest Accrual: Continuous compounding interest
+//
+// ARCHITECTURE:
+// - LendingPool<T>: Main pool contract for each asset type
+// - DepositPosition<T>: User's deposit receipt (NFT)
+// - BorrowPosition<T>: User's collateralized borrow position (NFT)
+// - AdminCap: Administrative capability for pool management
+//
+// RISK PARAMETERS:
+// - Collateral Factor: 75% (can borrow up to 75% of collateral value)
+// - Liquidation Threshold: 80% (liquidatable when debt > 80% of collateral)
+// - Liquidation Bonus: 5% (incentive for liquidators)
+// - Base Borrow Rate: 2% APY
+// - Optimal Utilization: 80%
+// - Max Borrow Rate: 32% APY (at 100% utilization)
+//
+// MATH & FORMULAS:
+// - Health Factor: health = (collateral × liquidation_threshold) / debt
+//   * HF >= 1.0 = Safe position
+//   * HF < 1.0 = Liquidatable position
+//
+// - Interest Rate Model (Kinked Curve):
+//   * If utilization <= 80%: rate = 2% + (utilization × 10%) / 80%
+//   * If utilization > 80%: rate = 12% + ((utilization - 80%) × 20%) / 20%
+//
+// - Utilization: utilization = total_borrowed / total_deposits
+//
+// - Debt Shares: shares = (borrow_amount × total_debt_shares) / total_borrowed
+// - Debt Amount: debt = (shares × total_borrowed) / total_debt_shares
+//
+// SECURITY CONSIDERATIONS:
+// - Overcollateralization: Protects lenders from borrower default
+// - Liquidation mechanism: Maintains protocol solvency
+// - Health factor buffer: 5% gap between CF (75%) and LT (80%)
+// - Interest accrual: Automatic on every interaction
+// - Access control: Only admin can pause pool
+// - Reentrancy safety: State updates before external calls
+//
+// ECONOMIC DESIGN:
+// - Lenders earn interest from borrowers
+// - Interest rate increases with utilization (incentivizes deposits at high utilization)
+// - Liquidators earn 5% bonus (incentivizes maintaining protocol health)
+// - Borrowers pay competitive rates based on supply/demand
+// - Protocol earns spread between borrow and supply rates
+//
+// LIQUIDATION MECHANICS:
+// 1. Position becomes unhealthy (HF < 1.0)
+// 2. Liquidator repays borrower's debt
+// 3. Liquidator receives collateral + 5% bonus
+// 4. Remaining collateral returned to borrower (if any)
+// 5. Protocol remains solvent, lenders protected
+//
+// EXAMPLE SCENARIO:
+// Initial State:
+//   - Alice deposits 100,000 SUI → Earns ~5% APY
+//   - Bob deposits 10,000 SUI as collateral
+//   - Bob borrows 7,000 SUI (70% of collateral, within 75% limit)
+//   - Utilization: 7% → Borrow rate: ~3% APY
+//
+// After Time:
+//   - Bob's debt grows to 7,350 SUI (5% interest)
+//   - Health Factor: (10,000 × 0.80) / 7,350 = 1.09 (still safe)
+//
+// If Debt Grows to 8,500:
+//   - Health Factor: (10,000 × 0.80) / 8,500 = 0.94 (unhealthy!)
+//   - Liquidator pays 8,500 SUI
+//   - Liquidator receives 8,925 SUI (8,500 + 5%)
+//   - Liquidator profit: 425 SUI
+//   - Remaining: 1,075 SUI returned to Bob
+//
+// USE CASES:
+// - Earn interest on idle crypto (lenders)
+// - Leverage positions without selling (borrowers)
+// - Arbitrage opportunities (liquidators)
+// - Treasury management for DAOs
+// - Institutional lending/borrowing
+//
+// COMPARISON WITH COMPETITORS:
+// - Similar to Aave: Overcollateralization, liquidation bonus
+// - Similar to Compound: Share-based accounting (cTokens)
+// - Similar to MakerDAO: Health factor monitoring
+// - Similar to Suilend: Native Sui implementation
+//
+// AUTHOR: Pranay Gaurav
+// VERSION: 1.0.0
+// LICENSE: MIT
+// INSPIRED BY: Aave, Compound, MakerDAO, Suilend
+//
+// ============================================================================================================
+
 module lending_protocol::lending_pool {
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};

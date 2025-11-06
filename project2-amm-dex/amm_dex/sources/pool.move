@@ -1,6 +1,68 @@
-/// AMM DEX - Automated Market Maker Liquidity Pool
-/// Implements constant product formula (x * y = k) for token swaps
-/// Features: liquidity provision, token swaps, LP tokens, fee collection
+// ============================================================================================================
+// AMM DEX Module - Automated Market Maker with Constant Product Formula
+// ============================================================================================================
+//
+// MODULE OVERVIEW:
+// This module implements a fully functional Automated Market Maker (AMM) DEX similar to Uniswap V2.
+// It uses the constant product formula (x × y = k) to enable permissionless token swaps without
+// traditional order books. Liquidity providers earn 0.3% fees on all trades.
+//
+// KEY FEATURES:
+// 1. Constant Product AMM: x × y = k formula for automated pricing
+// 2. Liquidity Pools: Generic pools supporting any token pair <TokenA, TokenB>
+// 3. LP Tokens: Share-based ownership of pool reserves
+// 4. Token Swaps: Efficient swaps with 0.3% fee (goes to LPs)
+// 5. Slippage Protection: User-defined minimum output amounts
+// 6. Emergency Pause: Admin controls for risk management
+//
+// ARCHITECTURE:
+// - Pool<TokenA, TokenB>: Shared object holding token reserves
+// - LPToken<TokenA, TokenB>: Fungible token representing pool ownership
+// - PoolAdminCap: Capability for administrative functions
+//
+// MATH & FORMULAS:
+// - Constant product: reserve_a × reserve_b = k (constant)
+// - Swap output: amount_out = (amount_in × 0.997 × reserve_out) / (reserve_in + amount_in × 0.997)
+// - LP tokens (first): sqrt(amount_a × amount_b)
+// - LP tokens (subsequent): min((amount_a × total_lp) / reserve_a, (amount_b × total_lp) / reserve_b)
+// - Price: price_a_in_b = reserve_b / reserve_a
+//
+// SECURITY CONSIDERATIONS:
+// - Slippage protection: Users specify minimum output
+// - Fee mechanism: 0.3% kept in pool (benefits LPs)
+// - Overflow protection: All math uses checked operations
+// - Access control: Only admin can pause/unpause
+// - K constant verification: Ensures k grows or stays constant
+//
+// ECONOMIC DESIGN:
+// - Trading fees: 0.3% on every swap
+// - Fee distribution: Automatically distributed to all LPs proportionally
+// - Price impact: Larger trades cause more slippage (protects against manipulation)
+// - Arbitrage incentive: Price discrepancies attract arbitrageurs, keeping prices aligned
+// - Impermanent loss: LPs exposed to IL if price ratios change
+//
+// USE CASES:
+// - Decentralized token trading (no KYC, permissionless)
+// - Long-tail asset markets (low listing barrier)
+// - Liquidity provision for yield (earn 0.3% fees)
+// - Price discovery for new tokens
+// - Cross-chain liquidity (wrapped tokens)
+// - Arbitrage opportunities
+//
+// COMPARISON WITH TRADITIONAL EXCHANGES:
+// - No order book (algorithmic pricing)
+// - No custody (self-custody)
+// - No KYC/AML (permissionless)
+// - 24/7 trading (always available)
+// - Transparent (all on-chain)
+//
+// AUTHOR: Pranay Gaurav
+// VERSION: 1.0.0
+// LICENSE: MIT
+// INSPIRED BY: Uniswap V2, SushiSwap, PancakeSwap
+//
+// ============================================================================================================
+
 module amm_dex::pool {
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance, Supply};

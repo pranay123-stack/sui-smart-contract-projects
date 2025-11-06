@@ -70,99 +70,154 @@ module amm_dex::pool {
     use sui::event;
 
     // ======== Error Codes ========
-    const EInsufficientLiquidity: u64 = 1;
-    const EInsufficientInputAmount: u64 = 2;
-    const EInsufficientOutputAmount: u64 = 3;
-    const EInvalidAmount: u64 = 4;
-    const ESlippageExceeded: u64 = 5;
-    const EPoolPaused: u64 = 6;
-    const EInsufficientLPTokens: u64 = 7;
-    const ENotAuthorized: u64 = 8;
+    const EInsufficientLiquidity: u64 = 1;    // Error: Pool doesn't have enough tokens for this operation
+    const EInsufficientInputAmount: u64 = 2;  // Error: Swap input amount is too small (must be > 0)
+    const EInsufficientOutputAmount: u64 = 3; // Error: Slippage protection triggered (got less than min_out)
+    const EInvalidAmount: u64 = 4;            // Error: Invalid amount provided (must be > 0)
+    const ESlippageExceeded: u64 = 5;         // Error: Output less than user's minimum acceptable amount
+    const EPoolPaused: u64 = 6;               // Error: Pool is paused for safety (emergency only)
+    const EInsufficientLPTokens: u64 = 7;     // Error: Not enough LP tokens to burn for withdrawal
+    const ENotAuthorized: u64 = 8;            // Error: Caller lacks required admin permissions
 
     // ======== Constants ========
-    const FEE_PRECISION: u64 = 10000;
-    const SWAP_FEE: u64 = 30; // 0.3% = 30/10000
-    const MINIMUM_LIQUIDITY: u64 = 1000;
+    const FEE_PRECISION: u64 = 10000;      // Precision for fee calculations (10000 = 100.00%)
+    const SWAP_FEE: u64 = 30;              // Trading fee: 0.3% (30/10000 = 0.003, same as Uniswap)
+    const MINIMUM_LIQUIDITY: u64 = 1000;   // Min liquidity locked forever (prevents division by zero attacks)
 
     // ======== Structs ========
 
-    /// Generic liquidity pool for two token types
+    /// Generic liquidity pool for two token types (implements x × y = k)
+    ///
+    /// Similar to Uniswap V2 pools, maintains constant product invariant.
+    /// Generic over TokenA and TokenB - one pool per unique pair.
+    /// Example: Pool<SUI, USDC> is SUI/USDC trading pair
+    ///
+    /// # Type Parameters
+    /// * `TokenA` - First token type (e.g., SUI)
+    /// * `TokenB` - Second token type (e.g., USDC)
     public struct Pool<phantom TokenA, phantom TokenB> has key {
-        id: UID,
-        reserve_a: Balance<TokenA>,
-        reserve_b: Balance<TokenB>,
-        lp_token_supply: Supply<LPToken<TokenA, TokenB>>,
-        fee_to: address,
-        is_paused: bool,
-        admin: address,
+        id: UID,                                      // Unique identifier for this pool
+        reserve_a: Balance<TokenA>,                   // Amount of TokenA in pool (reserve0 in Uniswap)
+        reserve_b: Balance<TokenB>,                   // Amount of TokenB in pool (reserve1 in Uniswap)
+        lp_token_supply: Supply<LPToken<TokenA, TokenB>>, // Total LP tokens issued (tracks ownership)
+        fee_to: address,                              // Address that receives protocol fees (currently unused)
+        is_paused: bool,                              // Emergency pause flag (stops all swaps/adds/removes)
+        admin: address,                               // Pool administrator (can pause/unpause)
     }
 
-    /// LP Token represents liquidity provider's share
+    /// LP Token - fungible token representing share of pool ownership
+    ///
+    /// Similar to Uniswap V2 LP tokens, this represents proportional ownership.
+    /// Holding LP tokens entitles you to your share of:
+    /// - Pool reserves (TokenA and TokenB)
+    /// - Trading fees earned (auto-compounded into reserves)
+    ///
+    /// # Type Parameters
+    /// * `TokenA` - First token in pair
+    /// * `TokenB` - Second token in pair
     public struct LPToken<phantom TokenA, phantom TokenB> has drop {}
 
-    /// Admin capability
+    /// Admin capability for pool management (emergency controls)
+    ///
+    /// Holder can pause/unpause the pool in case of emergency.
+    /// Created once during pool creation and transferred to creator.
     public struct PoolAdminCap has key, store {
-        id: UID,
-        pool_id: ID,
+        id: UID,        // Unique identifier for this capability
+        pool_id: ID,    // ID of pool this cap controls (ensures correct pool access)
     }
 
     // ======== Events ========
+    // All events provide complete audit trail for analytics and off-chain indexing
 
+    /// Emitted when a new liquidity pool is created
     public struct PoolCreated<phantom TokenA, phantom TokenB> has copy, drop {
-        pool_id: ID,
-        admin: address,
+        pool_id: ID,    // ID of newly created pool
+        admin: address, // Admin address (receives PoolAdminCap)
     }
 
+    /// Emitted when liquidity is added to pool
     public struct LiquidityAdded<phantom TokenA, phantom TokenB> has copy, drop {
-        pool_id: ID,
-        provider: address,
-        amount_a: u64,
-        amount_b: u64,
-        lp_tokens_minted: u64,
+        pool_id: ID,           // Pool receiving liquidity
+        provider: address,     // Address providing liquidity
+        amount_a: u64,         // Amount of TokenA deposited
+        amount_b: u64,         // Amount of TokenB deposited
+        lp_tokens_minted: u64, // LP tokens minted for this deposit
     }
 
+    /// Emitted when liquidity is removed from pool
     public struct LiquidityRemoved<phantom TokenA, phantom TokenB> has copy, drop {
-        pool_id: ID,
-        provider: address,
-        amount_a: u64,
-        amount_b: u64,
-        lp_tokens_burned: u64,
+        pool_id: ID,           // Pool losing liquidity
+        provider: address,     // Address removing liquidity
+        amount_a: u64,         // Amount of TokenA withdrawn
+        amount_b: u64,         // Amount of TokenB withdrawn
+        lp_tokens_burned: u64, // LP tokens burned for this withdrawal
     }
 
+    /// Emitted when tokens are swapped
     public struct Swapped<phantom TokenA, phantom TokenB> has copy, drop {
-        pool_id: ID,
-        trader: address,
-        amount_in: u64,
-        amount_out: u64,
-        is_a_to_b: bool,
-        fee_collected: u64,
+        pool_id: ID,        // Pool where swap occurred
+        trader: address,    // Address executing the swap
+        amount_in: u64,     // Amount of tokens swapped in
+        amount_out: u64,    // Amount of tokens swapped out
+        is_a_to_b: bool,    // true = TokenA → TokenB, false = TokenB → TokenA
+        fee_collected: u64, // Fee collected (stays in pool, benefits LPs)
     }
 
     // ======== Core Functions ========
 
-    /// Create a new liquidity pool
+    /// Create a new liquidity pool for a token pair
+    ///
+    /// Creates an AMM pool for trading between TokenA and TokenB.
+    /// The pool starts empty - liquidity must be added via add_liquidity().
+    ///
+    /// # Type Parameters
+    /// * `TokenA` - First token type (e.g., SUI)
+    /// * `TokenB` - Second token type (e.g., USDC)
+    ///
+    /// # Arguments
+    /// * `ctx` - Transaction context
+    ///
+    /// # Returns
+    /// * `Pool<TokenA, TokenB>` - The created pool (caller must share or keep)
+    /// * `PoolAdminCap` - Admin capability for emergency controls
+    ///
+    /// # Events
+    /// * Emits `PoolCreated` with pool ID and admin address
+    ///
+    /// # Example
+    /// ```
+    /// // Create SUI/USDC pool
+    /// let (pool, admin_cap) = create_pool<SUI, USDC>(ctx);
+    /// transfer::share_object(pool);  // Make pool public
+    /// ```
     public fun create_pool<TokenA, TokenB>(
         ctx: &mut TxContext
     ): (Pool<TokenA, TokenB>, PoolAdminCap) {
+        // Create unique ID for new pool
         let pool_uid = object::new(ctx);
         let pool_id = object::uid_to_inner(&pool_uid);
+
+        // Caller becomes pool admin
         let admin = ctx.sender();
 
+        // Initialize pool with zero reserves (empty)
         let pool = Pool<TokenA, TokenB> {
-            id: pool_uid,
-            reserve_a: balance::zero(),
-            reserve_b: balance::zero(),
-            lp_token_supply: balance::create_supply(LPToken<TokenA, TokenB> {}),
-            fee_to: admin,
-            is_paused: false,
-            admin,
+            id: pool_uid,                                                     // Unique pool identifier
+            reserve_a: balance::zero(),                                       // Start with 0 TokenA
+            reserve_b: balance::zero(),                                       // Start with 0 TokenB
+            lp_token_supply: balance::create_supply(LPToken<TokenA, TokenB> {}), // Create LP token type
+            fee_to: admin,                                                    // Protocol fee recipient (unused currently)
+            is_paused: false,                                                 // Pool starts active
+            admin,                                                            // Store admin address
         };
 
+        // Create admin capability for emergency controls
         let admin_cap = PoolAdminCap {
-            id: object::new(ctx),
-            pool_id,
+            id: object::new(ctx),  // Unique cap ID
+            pool_id,               // Link to this specific pool
         };
 
+        // Emit creation event for indexers
         event::emit(PoolCreated<TokenA, TokenB> {
             pool_id,
             admin,
@@ -171,54 +226,123 @@ module amm_dex::pool {
         (pool, admin_cap)
     }
 
-    /// Entry function to create and share pool
+    /// Entry function to create pool and make it publicly accessible
+    ///
+    /// Convenience function that creates a pool and immediately shares it.
+    /// Most common way to create a pool - makes it available for anyone to trade.
+    ///
+    /// # Type Parameters
+    /// * `TokenA` - First token type
+    /// * `TokenB` - Second token type
+    ///
+    /// # Arguments
+    /// * `ctx` - Transaction context
+    ///
+    /// # Returns
+    /// * Shares pool globally (anyone can add liquidity / swap)
+    /// * Transfers admin_cap to caller (only caller can pause)
     public entry fun create_pool_and_share<TokenA, TokenB>(
         ctx: &mut TxContext
     ) {
+        // Create the pool and admin capability
         let (pool, admin_cap) = create_pool<TokenA, TokenB>(ctx);
+
+        // Make pool globally accessible (shared object)
         transfer::share_object(pool);
+
+        // Give admin capability to creator
         transfer::transfer(admin_cap, ctx.sender());
     }
 
-    /// Add liquidity to the pool
+    /// Add liquidity to the pool and receive LP tokens
+    ///
+    /// Deposits TokenA and TokenB into pool, receives LP tokens representing ownership share.
+    /// LP tokens entitle holder to proportional share of reserves + accumulated trading fees.
+    ///
+    /// First liquidity provider:
+    /// - LP tokens = sqrt(amount_a × amount_b) - MINIMUM_LIQUIDITY
+    /// - MINIMUM_LIQUIDITY (1000) locked forever (prevents attacks)
+    ///
+    /// Subsequent providers:
+    /// - Must deposit in current pool ratio to avoid loss
+    /// - LP tokens = min((amount_a × total_lp) / reserve_a, (amount_b × total_lp) / reserve_b)
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to add liquidity to
+    /// * `token_a` - TokenA coins to deposit
+    /// * `token_b` - TokenB coins to deposit
+    /// * `ctx` - Transaction context
+    ///
+    /// # Returns
+    /// * LP tokens representing share of pool
+    ///
+    /// # Panics
+    /// * `EPoolPaused` - If pool is paused
+    /// * `EInvalidAmount` - If either amount is 0
+    /// * `EInsufficientLiquidity` - If LP tokens < MINIMUM_LIQUIDITY
+    ///
+    /// # Example
+    /// ```
+    /// // Add 1000 SUI + 2000 USDC to empty pool
+    /// let lp_tokens = add_liquidity(&mut pool, sui_coins, usdc_coins, ctx);
+    /// // Receives: sqrt(1000 × 2000) - 1000 = 413 LP tokens
+    /// // (1000 locked forever)
+    /// ```
     public fun add_liquidity<TokenA, TokenB>(
         pool: &mut Pool<TokenA, TokenB>,
         token_a: Coin<TokenA>,
         token_b: Coin<TokenB>,
         ctx: &mut TxContext
     ): Coin<LPToken<TokenA, TokenB>> {
+        // Safety check: prevent liquidity addition while paused
         assert!(!pool.is_paused, EPoolPaused);
 
+        // Get amounts being deposited
         let amount_a = coin::value(&token_a);
         let amount_b = coin::value(&token_b);
 
+        // Validate non-zero amounts
         assert!(amount_a > 0 && amount_b > 0, EInvalidAmount);
 
+        // Get current pool reserves
         let reserve_a = balance::value(&pool.reserve_a);
         let reserve_b = balance::value(&pool.reserve_b);
 
-        // Calculate LP tokens to mint
+        // Calculate LP tokens to mint based on pool state
         let lp_tokens_to_mint = if (reserve_a == 0 && reserve_b == 0) {
-            // Initial liquidity
+            // First liquidity deposit: use geometric mean (Uniswap V2 formula)
+            // Formula: sqrt(amount_a × amount_b)
+            // Prevents manipulation by first depositor
             let initial_liquidity = sqrt(amount_a * amount_b);
+
+            // Ensure sufficient initial liquidity
             assert!(initial_liquidity > MINIMUM_LIQUIDITY, EInsufficientLiquidity);
-            initial_liquidity - MINIMUM_LIQUIDITY // Lock minimum liquidity
+
+            // Lock MINIMUM_LIQUIDITY forever (prevents division by zero attacks)
+            // This small amount is burned and makes pool more secure
+            initial_liquidity - MINIMUM_LIQUIDITY
         } else {
-            // Subsequent liquidity - maintain ratio
+            // Subsequent liquidity: maintain current pool ratio
+            // Calculate LP tokens based on each reserve independently
             let lp_from_a = (amount_a * balance::supply_value(&pool.lp_token_supply)) / reserve_a;
             let lp_from_b = (amount_b * balance::supply_value(&pool.lp_token_supply)) / reserve_b;
+
+            // Take minimum to maintain ratio (excess not used)
+            // This protects against price manipulation
             if (lp_from_a < lp_from_b) { lp_from_a } else { lp_from_b }
         };
 
+        // Ensure we're minting positive LP tokens
         assert!(lp_tokens_to_mint > 0, EInsufficientLiquidity);
 
-        // Add tokens to reserves
+        // Add deposited tokens to pool reserves
         balance::join(&mut pool.reserve_a, coin::into_balance(token_a));
         balance::join(&mut pool.reserve_b, coin::into_balance(token_b));
 
-        // Mint LP tokens
+        // Mint LP tokens to represent ownership share
         let lp_balance = balance::increase_supply(&mut pool.lp_token_supply, lp_tokens_to_mint);
 
+        // Emit event for off-chain tracking
         event::emit(LiquidityAdded<TokenA, TokenB> {
             pool_id: object::id(pool),
             provider: ctx.sender(),
@@ -227,6 +351,7 @@ module amm_dex::pool {
             lp_tokens_minted: lp_tokens_to_mint,
         });
 
+        // Return LP tokens to provider
         coin::from_balance(lp_balance, ctx)
     }
 

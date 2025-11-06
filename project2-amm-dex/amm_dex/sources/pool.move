@@ -355,40 +355,75 @@ module amm_dex::pool {
         coin::from_balance(lp_balance, ctx)
     }
 
-    /// Remove liquidity from the pool
+    /// Remove liquidity from the pool by burning LP tokens
+    ///
+    /// Burns LP tokens and returns proportional share of both reserves.
+    /// Includes accumulated trading fees (auto-compounded into reserves).
+    ///
+    /// Formula:
+    /// - amount_a = (lp_tokens × reserve_a) / total_lp_supply
+    /// - amount_b = (lp_tokens × reserve_b) / total_lp_supply
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to remove liquidity from
+    /// * `lp_token` - LP tokens to burn
+    /// * `ctx` - Transaction context
+    ///
+    /// # Returns
+    /// * `(Coin<TokenA>, Coin<TokenB>)` - Both tokens proportional to LP share
+    ///
+    /// # Panics
+    /// * `EPoolPaused` - If pool is paused
+    /// * `EInvalidAmount` - If LP amount is 0
+    /// * `EInsufficientLiquidity` - If withdrawal amounts are 0
+    ///
+    /// # Example
+    /// ```
+    /// // User has 100 LP tokens (10% of 1000 total)
+    /// // Pool has 10000 SUI + 20000 USDC
+    /// let (sui, usdc) = remove_liquidity(&mut pool, lp_tokens, ctx);
+    /// // Returns: 1000 SUI (10%) + 2000 USDC (10%)
+    /// ```
     public fun remove_liquidity<TokenA, TokenB>(
         pool: &mut Pool<TokenA, TokenB>,
         lp_token: Coin<LPToken<TokenA, TokenB>>,
         ctx: &mut TxContext
     ): (Coin<TokenA>, Coin<TokenB>) {
+        // Safety check: prevent liquidity removal while paused
         assert!(!pool.is_paused, EPoolPaused);
 
+        // Get amount of LP tokens being burned
         let lp_amount = coin::value(&lp_token);
         assert!(lp_amount > 0, EInvalidAmount);
 
+        // Get current pool state
         let total_supply = balance::supply_value(&pool.lp_token_supply);
         let reserve_a = balance::value(&pool.reserve_a);
         let reserve_b = balance::value(&pool.reserve_b);
 
-        // Calculate amounts to withdraw
+        // Calculate proportional withdrawal amounts
+        // Formula: amount = (lp_tokens × reserve) / total_supply
         let amount_a = (lp_amount * reserve_a) / total_supply;
         let amount_b = (lp_amount * reserve_b) / total_supply;
 
         assert!(amount_a > 0 && amount_b > 0, EInsufficientLiquidity);
 
-        // Burn LP tokens
+        // Burn LP tokens first (reentrancy protection)
         balance::decrease_supply(&mut pool.lp_token_supply, coin::into_balance(lp_token));
 
-        // Withdraw tokens
+        // Withdraw TokenA from pool
         let withdrawn_a = coin::from_balance(
             balance::split(&mut pool.reserve_a, amount_a),
             ctx
         );
+
+        // Withdraw TokenB from pool
         let withdrawn_b = coin::from_balance(
             balance::split(&mut pool.reserve_b, amount_b),
             ctx
         );
 
+        // Emit event for off-chain tracking
         event::emit(LiquidityRemoved<TokenA, TokenB> {
             pool_id: object::id(pool),
             provider: ctx.sender(),
@@ -400,89 +435,165 @@ module amm_dex::pool {
         (withdrawn_a, withdrawn_b)
     }
 
-    /// Swap token A for token B
+    /// Swap TokenA for TokenB using constant product formula
+    ///
+    /// Implements Uniswap V2 style swap with 0.3% fee.
+    /// Uses formula: x × y = k (constant product)
+    /// Fee stays in pool, benefiting all LPs proportionally.
+    ///
+    /// Formula:
+    /// - amount_in_with_fee = amount_in × 0.997 (subtract 0.3% fee)
+    /// - amount_out = (amount_in_with_fee × reserve_b) / (reserve_a + amount_in_with_fee)
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to swap in
+    /// * `token_a` - TokenA coins to swap
+    /// * `min_amount_out` - Minimum TokenB to receive (slippage protection)
+    /// * `ctx` - Transaction context
+    ///
+    /// # Returns
+    /// * `Coin<TokenB>` - Output tokens after swap
+    ///
+    /// # Panics
+    /// * `EPoolPaused` - If pool is paused
+    /// * `EInsufficientInputAmount` - If input is 0
+    /// * `ESlippageExceeded` - If output < min_amount_out
+    /// * `EInsufficientLiquidity` - If pool lacks tokens
+    ///
+    /// # Example
+    /// ```
+    /// // Pool: 10000 SUI, 20000 USDC
+    /// // Swap 100 SUI for USDC (expect ~198 USDC after 0.3% fee)
+    /// let usdc = swap_a_to_b(&mut pool, sui_coins, 195, ctx);
+    /// // 195 = min acceptable (allows ~1.5% slippage)
+    /// ```
     public fun swap_a_to_b<TokenA, TokenB>(
         pool: &mut Pool<TokenA, TokenB>,
         token_a: Coin<TokenA>,
         min_amount_out: u64,
         ctx: &mut TxContext
     ): Coin<TokenB> {
+        // Safety check: prevent swaps while paused
         assert!(!pool.is_paused, EPoolPaused);
 
+        // Get input amount
         let amount_in = coin::value(&token_a);
         assert!(amount_in > 0, EInsufficientInputAmount);
 
+        // Get current reserves
         let reserve_a = balance::value(&pool.reserve_a);
         let reserve_b = balance::value(&pool.reserve_b);
 
-        // Calculate output amount using constant product formula
-        // amount_out = (amount_in * reserve_b) / (reserve_a + amount_in)
-        // With 0.3% fee: amount_in_with_fee = amount_in * (10000 - 30) / 10000
+        // Calculate output using constant product formula
+        // Subtract 0.3% fee first: 99.7% of input goes to swap
+        // Formula: out = (in × 0.997 × reserve_out) / (reserve_in + in × 0.997)
         let amount_in_with_fee = (amount_in * (FEE_PRECISION - SWAP_FEE)) / FEE_PRECISION;
         let amount_out = (amount_in_with_fee * reserve_b) / (reserve_a + amount_in_with_fee);
 
+        // Slippage protection: ensure user gets minimum expected amount
         assert!(amount_out >= min_amount_out, ESlippageExceeded);
+
+        // Ensure pool has enough liquidity
         assert!(amount_out < reserve_b, EInsufficientLiquidity);
 
-        // Add input tokens to reserve
+        // Add input tokens to reserve_a
         balance::join(&mut pool.reserve_a, coin::into_balance(token_a));
 
-        // Remove output tokens from reserve
+        // Remove output tokens from reserve_b
         let output = coin::from_balance(
             balance::split(&mut pool.reserve_b, amount_out),
             ctx
         );
 
+        // Calculate fee collected (stays in pool)
         let fee_collected = amount_in - amount_in_with_fee;
 
+        // Emit swap event
         event::emit(Swapped<TokenA, TokenB> {
             pool_id: object::id(pool),
             trader: ctx.sender(),
             amount_in,
             amount_out,
-            is_a_to_b: true,
+            is_a_to_b: true,  // Direction: A → B
             fee_collected,
         });
 
         output
     }
 
-    /// Swap token B for token A
+    /// Swap TokenB for TokenA using constant product formula
+    ///
+    /// Implements Uniswap V2 style swap in reverse direction (B → A).
+    /// Same 0.3% fee and constant product formula as swap_a_to_b.
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to swap in
+    /// * `token_b` - TokenB coins to swap
+    /// * `min_amount_out` - Minimum TokenA to receive (slippage protection)
+    /// * `ctx` - Transaction context
+    ///
+    /// # Returns
+    /// * `Coin<TokenA>` - Output tokens after swap
+    ///
+    /// # Panics
+    /// * `EPoolPaused` - If pool is paused
+    /// * `EInsufficientInputAmount` - If input is 0
+    /// * `ESlippageExceeded` - If output < min_amount_out
+    /// * `EInsufficientLiquidity` - If pool lacks tokens
+    ///
+    /// # Example
+    /// ```
+    /// // Pool: 10000 SUI, 20000 USDC
+    /// // Swap 200 USDC for SUI (expect ~99 SUI after 0.3% fee)
+    /// let sui = swap_b_to_a(&mut pool, usdc_coins, 97, ctx);
+    /// ```
     public fun swap_b_to_a<TokenA, TokenB>(
         pool: &mut Pool<TokenA, TokenB>,
         token_b: Coin<TokenB>,
         min_amount_out: u64,
         ctx: &mut TxContext
     ): Coin<TokenA> {
+        // Safety check: prevent swaps while paused
         assert!(!pool.is_paused, EPoolPaused);
 
+        // Get input amount
         let amount_in = coin::value(&token_b);
         assert!(amount_in > 0, EInsufficientInputAmount);
 
+        // Get current reserves
         let reserve_a = balance::value(&pool.reserve_a);
         let reserve_b = balance::value(&pool.reserve_b);
 
+        // Calculate output using constant product formula
+        // Same math as swap_a_to_b, but swapped reserves
         let amount_in_with_fee = (amount_in * (FEE_PRECISION - SWAP_FEE)) / FEE_PRECISION;
         let amount_out = (amount_in_with_fee * reserve_a) / (reserve_b + amount_in_with_fee);
 
+        // Slippage protection
         assert!(amount_out >= min_amount_out, ESlippageExceeded);
+
+        // Liquidity check
         assert!(amount_out < reserve_a, EInsufficientLiquidity);
 
+        // Add input tokens to reserve_b
         balance::join(&mut pool.reserve_b, coin::into_balance(token_b));
 
+        // Remove output tokens from reserve_a
         let output = coin::from_balance(
             balance::split(&mut pool.reserve_a, amount_out),
             ctx
         );
 
+        // Calculate fee collected
         let fee_collected = amount_in - amount_in_with_fee;
 
+        // Emit swap event
         event::emit(Swapped<TokenA, TokenB> {
             pool_id: object::id(pool),
             trader: ctx.sender(),
             amount_in,
             amount_out,
-            is_a_to_b: false,
+            is_a_to_b: false,  // Direction: B → A
             fee_collected,
         });
 
@@ -491,77 +602,182 @@ module amm_dex::pool {
 
     // ======== Admin Functions ========
 
-    /// Pause pool operations
+    /// Pause pool operations (admin only, emergency use)
+    ///
+    /// Disables all pool operations (swaps, add/remove liquidity).
+    /// Used when security issue detected or during upgrades.
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to pause
+    /// * `_admin_cap` - Admin capability (proves authorization)
+    ///
+    /// # Security
+    /// * Only PoolAdminCap holder can call this
+    /// * Should only be used in emergencies
     public fun pause_pool<TokenA, TokenB>(
         pool: &mut Pool<TokenA, TokenB>,
-        _admin_cap: &PoolAdminCap,
+        _admin_cap: &PoolAdminCap,  // Proves admin access (unused but required)
     ) {
-        pool.is_paused = true;
+        pool.is_paused = true;  // Block all operations
     }
 
-    /// Unpause pool operations
+    /// Unpause pool operations (admin only)
+    ///
+    /// Re-enables pool operations after emergency is resolved.
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to unpause
+    /// * `_admin_cap` - Admin capability (proves authorization)
     public fun unpause_pool<TokenA, TokenB>(
         pool: &mut Pool<TokenA, TokenB>,
-        _admin_cap: &PoolAdminCap,
+        _admin_cap: &PoolAdminCap,  // Proves admin access (unused but required)
     ) {
-        pool.is_paused = false;
+        pool.is_paused = false;  // Re-enable all operations
     }
 
     // ======== View Functions ========
+    // Read-only functions for querying pool state (no gas cost when called off-chain)
 
-    /// Get reserve amounts
+    /// Get both reserve amounts from the pool
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to query
+    ///
+    /// # Returns
+    /// * `(u64, u64)` - (reserve_a, reserve_b) amounts
+    ///
+    /// # Use Case
+    /// * Check pool liquidity before swapping
+    /// * Calculate expected swap output
+    /// * Display pool stats in UI
     public fun get_reserves<TokenA, TokenB>(pool: &Pool<TokenA, TokenB>): (u64, u64) {
-        (balance::value(&pool.reserve_a), balance::value(&pool.reserve_b))
+        (balance::value(&pool.reserve_a), balance::value(&pool.reserve_b))  // Return both reserves
     }
 
     /// Get total LP token supply
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to query
+    ///
+    /// # Returns
+    /// * Total LP tokens in circulation
+    ///
+    /// # Use Case
+    /// * Calculate LP token value
+    /// * Determine ownership percentage
     public fun get_lp_supply<TokenA, TokenB>(pool: &Pool<TokenA, TokenB>): u64 {
-        balance::supply_value(&pool.lp_token_supply)
+        balance::supply_value(&pool.lp_token_supply)  // Total LP tokens issued
     }
 
-    /// Calculate output amount for a given input (without executing swap)
+    /// Calculate expected swap output without executing (quote function)
+    ///
+    /// Simulates a swap to show user expected output before execution.
+    /// Useful for price quotes and slippage calculations.
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to query
+    /// * `amount_in` - Input amount to simulate
+    /// * `is_a_to_b` - true for A→B swap, false for B→A
+    ///
+    /// # Returns
+    /// * Expected output amount (after 0.3% fee)
+    ///
+    /// # Example
+    /// ```
+    /// // Quote swap of 100 SUI for USDC
+    /// let expected_usdc = get_amount_out(&pool, 100, true);
+    /// // Use this to set min_amount_out with slippage tolerance
+    /// let min_out = expected_usdc * 99 / 100;  // 1% slippage
+    /// ```
+    ///
+    /// # Note
+    /// * Does not account for price impact of this specific trade
+    /// * Use this output to set min_amount_out for actual swap
     public fun get_amount_out<TokenA, TokenB>(
         pool: &Pool<TokenA, TokenB>,
         amount_in: u64,
         is_a_to_b: bool
     ): u64 {
+        // Get current reserves
         let (reserve_a, reserve_b) = get_reserves(pool);
 
+        // Determine input/output reserves based on direction
         let (reserve_in, reserve_out) = if (is_a_to_b) {
-            (reserve_a, reserve_b)
+            (reserve_a, reserve_b)  // A → B swap
         } else {
-            (reserve_b, reserve_a)
+            (reserve_b, reserve_a)  // B → A swap
         };
 
+        // Calculate output using same formula as actual swap
         let amount_in_with_fee = (amount_in * (FEE_PRECISION - SWAP_FEE)) / FEE_PRECISION;
         (amount_in_with_fee * reserve_out) / (reserve_in + amount_in_with_fee)
     }
 
-    /// Check if pool is paused
+    /// Check if pool is currently paused
+    ///
+    /// # Arguments
+    /// * `pool` - Pool to query
+    ///
+    /// # Returns
+    /// * true if paused (operations disabled), false if active
     public fun is_paused<TokenA, TokenB>(pool: &Pool<TokenA, TokenB>): bool {
-        pool.is_paused
+        pool.is_paused  // Emergency pause status
     }
 
     // ======== Helper Functions ========
 
-    /// Simple integer square root implementation
+    /// Calculate integer square root using Babylonian method
+    ///
+    /// Used for initial liquidity calculation: sqrt(amount_a × amount_b).
+    /// Implements Newton's method for integer square roots.
+    ///
+    /// # Arguments
+    /// * `x` - Number to find square root of
+    ///
+    /// # Returns
+    /// * Integer square root (rounded down)
+    ///
+    /// # Algorithm
+    /// * Newton's method: z_(n+1) = (z_n + x/z_n) / 2
+    /// * Converges to sqrt(x) in O(log n) iterations
     fun sqrt(x: u64): u64 {
+        // Handle zero case
         if (x == 0) return 0;
+
+        // Initial guess: (x + 1) / 2
         let mut z = (x + 1) / 2;
         let mut y = x;
+
+        // Iterate until convergence
         while (z < y) {
-            y = z;
-            z = (x / z + z) / 2;
+            y = z;                  // Update previous guess
+            z = (x / z + z) / 2;    // Newton's method iteration
         };
-        y
+
+        y  // Return converged value
     }
 
     // ======== Test Functions ========
+    // Only compiled in test mode, not in production builds
 
+    /// Initialize pool for testing purposes
+    ///
+    /// Test-only helper that creates a pool and transfers admin cap.
+    ///
+    /// # Arguments
+    /// * `ctx` - Test transaction context
+    ///
+    /// # Returns
+    /// * Pool object for test scenarios
     #[test_only]
     public fun init_for_testing<TokenA, TokenB>(ctx: &mut TxContext): Pool<TokenA, TokenB> {
+        // Create pool and admin capability
         let (pool, admin_cap) = create_pool<TokenA, TokenB>(ctx);
+
+        // Transfer admin cap to test caller
         transfer::transfer(admin_cap, ctx.sender());
+
+        // Return pool for test use
         pool
     }
 }

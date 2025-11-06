@@ -110,115 +110,136 @@ module lending_protocol::lending_pool {
     use sui::clock::{Self, Clock};
 
     // ======== Error Codes ========
-    const EInsufficientCollateral: u64 = 1;
-    const EInsufficientLiquidity: u64 = 2;
-    const EInvalidAmount: u64 = 3;
-    const EPositionNotLiquidatable: u64 = 4;
-    const ENoPositionFound: u64 = 5;
-    const EPoolPaused: u64 = 6;
-    const ENotAuthorized: u64 = 7;
-    const EPositionHealthy: u64 = 8;
+    const EInsufficientCollateral: u64 = 1;   // Error: Borrow amount exceeds 75% collateral factor limit
+    const EInsufficientLiquidity: u64 = 2;    // Error: Pool doesn't have enough liquidity for withdrawal/borrow
+    const EInvalidAmount: u64 = 3;            // Error: Amount must be greater than 0
+    const EPositionNotLiquidatable: u64 = 4;  // Error: Position health factor >= 1.0 (cannot liquidate healthy positions)
+    const ENoPositionFound: u64 = 5;          // Error: User has no borrow position to liquidate
+    const EPoolPaused: u64 = 6;               // Error: Pool operations are paused for emergency
+    const ENotAuthorized: u64 = 7;            // Error: Caller lacks required admin permissions
+    const EPositionHealthy: u64 = 8;          // Error: Position is healthy (HF >= 1.0), cannot liquidate
 
     // ======== Constants ========
-    const PRECISION: u64 = 10000;
-    const COLLATERAL_FACTOR: u64 = 7500; // 75% - how much can be borrowed against collateral
-    const LIQUIDATION_THRESHOLD: u64 = 8000; // 80% - when position can be liquidated
-    const LIQUIDATION_BONUS: u64 = 500; // 5% - bonus for liquidators
-    const BASE_BORROW_RATE: u64 = 200; // 2% base borrow rate
-    const RATE_SLOPE: u64 = 1000; // 10% rate slope based on utilization
-    const OPTIMAL_UTILIZATION: u64 = 8000; // 80% optimal utilization
+    const PRECISION: u64 = 10000;             // Precision for percentage calculations (10000 = 100.00%)
+    const COLLATERAL_FACTOR: u64 = 7500;      // 75% - Maximum borrowable amount vs collateral (7500/10000)
+    const LIQUIDATION_THRESHOLD: u64 = 8000;  // 80% - Debt/collateral ratio triggering liquidation (8000/10000)
+    const LIQUIDATION_BONUS: u64 = 500;       // 5% - Bonus paid to liquidators for maintaining protocol health
+    const BASE_BORROW_RATE: u64 = 200;        // 2% - Minimum borrow APY (200/10000 = 0.02)
+    const RATE_SLOPE: u64 = 1000;             // 10% - Rate increase per utilization point
+    const OPTIMAL_UTILIZATION: u64 = 8000;    // 80% - Target utilization for optimal rates (kink point)
 
-    const SECONDS_PER_YEAR: u64 = 31536000;
+    const SECONDS_PER_YEAR: u64 = 31536000;   // Seconds in a year (365.25 days) for APY calculations
 
     // ======== Structs ========
 
-    /// Main lending pool for a specific asset
+    /// Main lending pool for a specific asset type (similar to Compound's cToken)
+    ///
+    /// Each pool manages one asset type and tracks deposits, borrows, and interest.
+    /// Uses share-based debt accounting for fair interest distribution.
+    /// Interest accrues continuously based on utilization rate.
+    ///
+    /// # Type Parameter
+    /// * `T` - Asset type (e.g., SUI, USDC)
     public struct LendingPool<phantom T> has key {
-        id: UID,
-        /// Total deposits in the pool
-        total_deposits: Balance<T>,
-        /// Total amount borrowed
-        total_borrowed: u64,
-        /// Total borrow shares
-        total_borrow_shares: u64,
-        /// Last time interest was accrued
-        last_accrual_time: u64,
-        /// Accumulated borrow index
-        borrow_index: u64,
-        /// Pool paused status
-        is_paused: bool,
-        /// Admin address
-        admin: address,
+        id: UID,                         // Unique identifier for this lending pool
+        total_deposits: Balance<T>,      // Total assets deposited by lenders (available for borrowing)
+        total_borrowed: u64,             // Total assets currently borrowed (grows with interest)
+        total_borrow_shares: u64,        // Total borrow shares issued (for proportional debt tracking)
+        last_accrual_time: u64,          // Last timestamp when interest was accrued (in milliseconds)
+        borrow_index: u64,               // Accumulated borrow index for interest calculation (starts at PRECISION)
+        is_paused: bool,                 // Emergency pause flag (true = all operations disabled)
+        admin: address,                  // Administrator address (can pause/unpause pool)
     }
 
-    /// User's deposit position
+    /// User's deposit position (receipt NFT proving deposit)
+    ///
+    /// This NFT represents a deposit into the lending pool.
+    /// Required to withdraw funds. Earns passive interest from borrowers.
+    ///
+    /// # Type Parameter
+    /// * `T` - Asset type deposited
     public struct DepositPosition<phantom T> has key, store {
-        id: UID,
-        pool_id: ID,
-        deposited_amount: u64,
-        deposit_timestamp: u64,
+        id: UID,                  // Unique identifier for this deposit NFT
+        pool_id: ID,              // ID of pool where deposit is held (prevents cross-pool usage)
+        deposited_amount: u64,    // Original deposit amount (for cost basis tracking)
+        deposit_timestamp: u64,   // When deposit was made (milliseconds since epoch)
     }
 
-    /// User's borrow position
+    /// User's borrow position (collateralized loan NFT)
+    ///
+    /// This NFT represents a collateralized borrow position.
+    /// Collateral is locked until debt is fully repaid.
+    /// Position can be liquidated if health factor drops below 1.0.
+    ///
+    /// # Type Parameter
+    /// * `T` - Asset type borrowed (same as collateral in this implementation)
     public struct BorrowPosition<phantom T> has key, store {
-        id: UID,
-        pool_id: ID,
-        /// Collateral amount deposited
-        collateral_amount: u64,
-        /// Borrow shares (not actual amount)
-        borrow_shares: u64,
-        /// Timestamp of borrow
-        borrow_timestamp: u64,
+        id: UID,                  // Unique identifier for this borrow position NFT
+        pool_id: ID,              // ID of pool where borrow originated (prevents cross-pool usage)
+        collateral_amount: u64,   // Amount of collateral locked (must stay >= debt / 0.75)
+        borrow_shares: u64,       // Borrow shares owned (debt = shares × total_borrowed / total_shares)
+        borrow_timestamp: u64,    // When borrow was initiated (milliseconds since epoch)
     }
 
-    /// Admin capability
+    /// Admin capability for pool management (emergency controls)
+    ///
+    /// Holder can pause/unpause pools in case of emergency.
+    /// Created once during pool creation and transferred to creator.
     public struct AdminCap has key, store {
-        id: UID,
+        id: UID,  // Unique identifier for this capability
     }
 
     // ======== Events ========
+    // All events provide complete audit trail for analytics and monitoring
 
+    /// Emitted when a new lending pool is created
     public struct PoolCreated<phantom T> has copy, drop {
-        pool_id: ID,
-        admin: address,
+        pool_id: ID,    // ID of newly created pool
+        admin: address, // Administrator address (receives AdminCap)
     }
 
+    /// Emitted when user deposits assets into pool (becomes lender)
     public struct Deposited<phantom T> has copy, drop {
-        pool_id: ID,
-        user: address,
-        amount: u64,
+        pool_id: ID,  // Pool receiving deposit
+        user: address, // Address making deposit (lender)
+        amount: u64,   // Amount of assets deposited
     }
 
+    /// Emitted when user withdraws assets from pool
     public struct Withdrawn<phantom T> has copy, drop {
-        pool_id: ID,
-        user: address,
-        amount: u64,
+        pool_id: ID,  // Pool from which withdrawal is made
+        user: address, // Address withdrawing (lender)
+        amount: u64,   // Amount of assets withdrawn
     }
 
+    /// Emitted when user borrows assets against collateral
     public struct Borrowed<phantom T> has copy, drop {
-        pool_id: ID,
-        user: address,
-        amount: u64,
-        collateral: u64,
+        pool_id: ID,    // Pool from which assets are borrowed
+        user: address,   // Address borrowing (borrower)
+        amount: u64,     // Amount of assets borrowed
+        collateral: u64, // Amount of collateral locked
     }
 
+    /// Emitted when user repays borrowed assets
     public struct Repaid<phantom T> has copy, drop {
-        pool_id: ID,
-        user: address,
-        amount: u64,
+        pool_id: ID,  // Pool to which repayment is made
+        user: address, // Address repaying (borrower)
+        amount: u64,   // Amount of debt repaid
     }
 
+    /// Emitted when unhealthy position is liquidated
     public struct Liquidated<phantom T> has copy, drop {
-        pool_id: ID,
-        liquidator: address,
-        borrower: address,
-        repaid_amount: u64,
-        collateral_seized: u64,
+        pool_id: ID,          // Pool where liquidation occurred
+        liquidator: address,   // Address performing liquidation (receives bonus)
+        borrower: address,     // Address being liquidated (loses collateral)
+        repaid_amount: u64,    // Amount of debt repaid by liquidator
+        collateral_seized: u64, // Amount of collateral seized (includes 5% bonus)
     }
 
+    /// Emitted when interest accrues to pool
     public struct InterestAccrued<phantom T> has copy, drop {
-        pool_id: ID,
-        interest_amount: u64,
+        pool_id: ID,        // Pool where interest accrued
+        interest_amount: u64, // Amount of interest added to total_borrowed
     }
 
     // ======== Functions ========
